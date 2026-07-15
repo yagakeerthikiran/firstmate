@@ -204,3 +204,146 @@ Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md) for the workf
 ## License
 
 MIT - see [LICENSE](LICENSE).
+
+## KS / AgentLab Firstmate startup initialization
+
+This section is a local KS/AgentLab startup contract for this Firstmate checkout.
+
+When the captain says "read README.md and initialize", the first mate must treat this section as mandatory.
+
+### Firstmate operating model to follow
+
+- The captain talks to one liaison: Firstmate.
+- Firstmate reads project registrations and routes.
+- Firstmate writes guarded backlog, briefs, and state.
+- Firstmate spawns crewmates in visible backend endpoints.
+- Crewmates work in isolated treehouse worktrees.
+- Ship tasks deliver PRs, approved local merges, or code changes.
+- Scout tasks deliver investigation reports.
+- Firstmate supervises, reconciles, and reports outcomes to the captain.
+- Firstmate coordinates and must not directly implement project code unless explicitly approved.
+
+### Mandatory boot reads
+
+Before doing meaningful work, Firstmate must read and obey:
+
+- /home/user/.agents/AGENTS.md
+- /home/user/.agents/skills/agent-report-publishing/SKILL.md
+- /home/user/github/firstmate/projects/agentlab-shared-memory/AGENTS.md
+- /home/user/github/firstmate/projects/agentlab-shared-memory/scripts/publish-firstmate-run-report.sh
+- /home/user/github/firstmate/data/projects.md
+- /home/user/github/firstmate/data/captain.md
+- /home/user/github/firstmate/data/backlog.md
+- /home/user/github/firstmate/config/crew-harness
+- /home/user/github/firstmate/config/backend
+
+### Mandatory project report routes
+
+Firstmate must know these project routes before spawning workers.
+
+KS website:
+- path: /home/user/github/firstmate/projects/ks-website-builder-seo
+- branch of record: main
+- report helper: scripts/agent-report-publish.sh
+- reports: reports/agent-runs/
+
+DriveLog canonical preview:
+- path: /home/user/github/yagakeerthikiran/drivelog-preview
+- branch of record: preview
+- preview is the current/latest DriveLog branch
+- report helper: scripts/agent-report-publish.sh
+- reports: reports/agent-runs/
+
+AgentLab shared memory:
+- path: /home/user/github/firstmate/projects/agentlab-shared-memory
+- branch of record: main
+- report helper: scripts/agent-report-publish.sh
+- Firstmate meta/session report helper: scripts/publish-firstmate-run-report.sh
+- reports: reports/agent-runs/
+
+KS website staging state:
+- path: /home/user/github/firstmate/projects/ks-website-staging-state
+- branch of record: main
+- report helper: scripts/agent-report-publish.sh
+- reports: reports/agent-runs/
+
+KS website production state:
+- path: /home/user/github/firstmate/projects/ks-website-production-state
+- branch of record: main
+- report helper: scripts/agent-report-publish.sh
+- reports: reports/agent-runs/
+
+### Mandatory crewmate brief rule
+
+Before spawning any crewmate, Firstmate must write the crewmate brief with:
+
+- project identity
+- local repo path
+- branch of record
+- current branch
+- task type: ship or scout
+- report folder
+- report helper path
+- GitHub repo and branch target
+- safety rules
+- end-of-run required output
+- REPORT_ROUTE_CONFIRMED=YES
+
+If Firstmate cannot determine the route, helper, or branch rule, it must not spawn. It must publish a BLOCKED report to AgentLab shared memory.
+
+### Mandatory report publishing rule
+
+Terminal copy/paste, tmux capture, and OpenCode TUI output are not reliable final deliverables.
+
+Every meaningful run must create a durable Markdown report.
+
+A meaningful run is not complete until one of these is true:
+
+1. The report was committed and pushed to the correct GitHub repo using the approved helper.
+2. Publishing was blocked for a clear reason, and a local BLOCKED report explains why.
+
+For Firstmate meta/setup/session reports, publish to AgentLab shared memory using:
+
+/home/user/github/firstmate/projects/agentlab-shared-memory/scripts/publish-firstmate-run-report.sh --agent opencode --type setup --topic firstmate-session-initialization --source /tmp/report.md
+
+### Standard startup prompt
+
+Captain can paste this after starting Firstmate:
+
+Ahoy.
+
+Read README.md and initialize this Firstmate session using the KS / AgentLab Firstmate startup initialization section.
+
+Before doing anything else, read and obey:
+- /home/user/.agents/AGENTS.md
+- /home/user/.agents/skills/agent-report-publishing/SKILL.md
+- /home/user/github/firstmate/projects/agentlab-shared-memory/AGENTS.md
+- /home/user/github/firstmate/projects/agentlab-shared-memory/scripts/publish-firstmate-run-report.sh
+
+Verify:
+1. active harness and model/provider
+2. current cwd
+3. tmux session/window state
+4. global memory symlinks
+5. global agent-report-publishing skill visibility
+6. Firstmate project registry
+7. DriveLog branch of record is preview
+8. KS website branch of record is main
+9. AgentLab shared memory is the GitHub destination for Firstmate meta/session reports
+10. every future crewmate brief must include REPORT_ROUTE_CONFIRMED=YES
+
+Do not implement website code.
+Do not touch staging.
+Do not touch production.
+Do not use secrets.
+Do not spawn crewmates yet.
+
+Write and publish a session initialization report using:
+
+/home/user/github/firstmate/projects/agentlab-shared-memory/scripts/publish-firstmate-run-report.sh --agent opencode --type setup --topic firstmate-session-initialization --source /tmp/report.md
+
+Return only:
+- PASS/BLOCKED
+- GitHub report path
+- commit hash
+- next action
