@@ -204,3 +204,130 @@ Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md) for the workf
 ## License
 
 MIT - see [LICENSE](LICENSE).
+
+## KS / AgentLab Firstmate startup initialization
+
+This section is a local startup checklist for this Firstmate checkout. It is not a replacement for Firstmate's core behaviour. It exists to remind the local Firstmate session to follow the official Firstmate lifecycle plus the captain's local AgentLab/KS rules.
+
+### Native Firstmate lifecycle
+
+Do not make Firstmate a dumb wrapper around OpenCode.
+
+OpenCode with local Ollama qwen3.6 is only the selected local model harness. Firstmate must still use its native lifecycle:
+
+- bootstrap diagnostics
+- tasks-axi backlog backend
+- quota-axi dispatch support
+- crew-dispatch profiles
+- fm-spawn
+- tmux backend
+- treehouse worktrees for ordinary ship/scout tasks
+- project modes
+- task briefs
+- state files
+- report helpers
+- watcher/supervision protocol
+- guarded PR/report delivery
+
+### Local model rule
+
+Use local Ollama qwen3.6 through OpenCode unless the captain explicitly approves a paid or cloud model.
+
+Required local config:
+
+- config/backend = tmux
+- config/crew-harness = default
+- config/backlog-backend = tasks-axi
+- config/crew-dispatch.json selects opencode/qwen3.6:latest
+
+Do not use Big Pickle, OpenCode Zen, OpenAI, Claude, Anthropic, OpenRouter, or any paid/cloud model unless the captain explicitly approves.
+
+### Correct KS website environment map
+
+KS staging:
+- target identity: staging.ksdrivingschool.com.au on SSH host
+- writable as part of an approved task
+- validation/proof environment for website changes
+
+KS production:
+- target identity: ksdrivingschool.com.au on SSH host
+- live production website
+- not read-only
+- writable only with explicit captain approval for each specific production change or promotion
+
+Every KS website task brief must include:
+
+- KS_STAGING_TARGET=staging.ksdrivingschool.com.au
+- KS_PRODUCTION_TARGET=ksdrivingschool.com.au
+- STAGING_WRITABLE_WITH_APPROVED_TASK=YES
+- PRODUCTION_WRITABLE_WITH_EXPLICIT_CAPTAIN_APPROVAL=YES
+- PRODUCTION_READ_ONLY=NO
+
+### Mandatory boot reads
+
+Before meaningful work, read and obey:
+
+- /home/user/github/firstmate/README.md
+- /home/user/github/firstmate/AGENTS.md
+- /home/user/.agents/AGENTS.md
+- /home/user/.agents/skills/agent-report-publishing/SKILL.md
+- /home/user/github/firstmate/projects/agentlab-shared-memory/AGENTS.md
+- /home/user/github/firstmate/projects/agentlab-shared-memory/data/ks-website-environment-map.md
+- /home/user/github/firstmate/projects/agentlab-shared-memory/scripts/publish-firstmate-run-report.sh
+- /home/user/github/firstmate/projects/agentlab-shared-memory/scripts/publish-firstmate-session-fragment.sh
+- /home/user/github/firstmate/projects/agentlab-shared-memory/scripts/publish-agentlab-memory-update.sh
+- /home/user/github/firstmate/data/projects.md
+- /home/user/github/firstmate/data/captain.md
+- /home/user/github/firstmate/data/backlog.md
+- /home/user/github/firstmate/config/backend
+- /home/user/github/firstmate/config/crew-dispatch.json
+- /home/user/github/firstmate/config/backlog-backend
+
+### Local-first memory and transcript rule
+
+Final setup/scout/task reports go to:
+
+- reports/agent-runs/
+
+On-demand current-session/transcript checkpoints go to:
+
+- reports/session-fragments/
+- helper: /home/user/github/firstmate/projects/agentlab-shared-memory/scripts/publish-firstmate-session-fragment.sh
+
+Long-term durable operating memory goes to:
+
+- data/
+- helper: /home/user/github/firstmate/projects/agentlab-shared-memory/scripts/publish-agentlab-memory-update.sh
+
+Routine memory updates must be local-first: write locally, fetch/pull, commit locally, push through git, then return GitHub path and commit hash.
+
+### Startup prompt
+
+Ahoy.
+
+Read README.md and initialize this Firstmate session using the KS / AgentLab Firstmate startup initialization section.
+
+Use Firstmate's native lifecycle. Do not bypass crew-dispatch, tasks-axi, quota-axi, fm-spawn, tmux backend, treehouse worktrees, task state, project routes, report helpers, local-first memory helpers, or on-demand session fragment publishing. OpenCode/qwen3.6 is only the local model harness selected through Firstmate's dispatch profile.
+
+Confirm the KS website environment map:
+- staging = staging.ksdrivingschool.com.au on SSH host
+- production = ksdrivingschool.com.au on SSH host
+- staging is writable within approved task scope
+- production is writable with explicit captain approval per change
+- production is not read-only
+
+Write and publish a session initialization report using:
+
+/home/user/github/firstmate/projects/agentlab-shared-memory/scripts/publish-firstmate-run-report.sh --agent opencode --type setup --topic firstmate-session-initialization --source /tmp/report.md
+
+Do not implement website code.
+Do not touch staging.
+Do not touch production.
+Do not use secrets.
+Do not spawn crewmates until initialization report publishing is complete.
+
+Return only:
+- PASS/BLOCKED
+- GitHub report path
+- commit hash
+- next action
