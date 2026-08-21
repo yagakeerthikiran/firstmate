@@ -678,7 +678,7 @@ real_path_or_raw() {  # <path>
 # that every downstream operation (send/capture/kill) already treats as opaque
 # per-backend routing (fm_backend_resolve_selector).
 validate_spawn_worktree() {  # <source> <inspect-target>
-  local source=$1 inspect_target=$2 wt_real proj_real wt_top wt_top_real
+  local source=$1 inspect_target=$2 wt_real proj_real wt_top wt_top_real wt_common wt_common_src proj_common proj_common_src
   wt_real=
   if ! wt_real=$(cd "$WT" 2>/dev/null && pwd -P); then
     wt_real=
@@ -689,7 +689,30 @@ validate_spawn_worktree() {  # <source> <inspect-target>
   if ! wt_top_real=$(cd "$wt_top" 2>/dev/null && pwd -P); then
     wt_top_real=
   fi
-  if [ -z "$wt_real" ] || [ -z "$wt_top_real" ] || [ "$wt_real" != "$wt_top_real" ] || [ "$wt_real" = "$proj_real" ]; then
+  # Same-repository identity: a git root that differs from the
+  # primary checkout is not enough - it must be the SAME repository, i.e. its
+  # git common dir must resolve to the primary's. Linked worktrees share the
+  # common dir; a foreign repository or a repository nested inside the
+  # checkout has its own, so both are refused here instead of being recorded
+  # in meta as the task worktree and later hard-reset or removed by teardown.
+  # Fail closed: an unreadable common dir on either side refuses the spawn.
+  wt_common=
+  wt_common_src=$(git -C "$WT" rev-parse --git-common-dir 2>/dev/null || true)
+  if [ -n "$wt_common_src" ]; then
+    case "$wt_common_src" in
+      /*) wt_common=$(real_path_or_raw "$wt_common_src") ;;
+      *)  wt_common=$(real_path_or_raw "$WT/$wt_common_src") ;;
+    esac
+  fi
+  proj_common=
+  proj_common_src=$(git -C "$PROJ_ABS" rev-parse --git-common-dir 2>/dev/null || true)
+  if [ -n "$proj_common_src" ]; then
+    case "$proj_common_src" in
+      /*) proj_common=$(real_path_or_raw "$proj_common_src") ;;
+      *)  proj_common=$(real_path_or_raw "$PROJ_ABS/$proj_common_src") ;;
+    esac
+  fi
+  if [ -z "$wt_real" ] || [ -z "$wt_top_real" ] || [ "$wt_real" != "$wt_top_real" ] || [ "$wt_real" = "$proj_real" ] || [ -z "$wt_common" ] || [ -z "$proj_common" ] || [ "$wt_common" != "$proj_common" ]; then
     echo "error: $source did not yield an isolated worktree (resolved '$WT'; worktree root '${wt_top:-none}'; primary '$PROJ_ABS'); refusing to launch to avoid tangling the primary checkout. Inspect target $inspect_target" >&2
     exit 1
   fi
