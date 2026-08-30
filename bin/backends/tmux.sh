@@ -120,7 +120,14 @@ fm_backend_tmux_send_literal() {  # <target> <text>
 # fm_backend_tmux_kill: remove the task's window, best-effort. Mirrors
 # fm-teardown.sh's `tmux kill-window -t "$T" 2>/dev/null || true`.
 fm_backend_tmux_kill() {  # <target>
-  tmux kill-window -t "$1" 2>/dev/null || true
+  # A target may be a window handle ("session:window") or a PANE id ("%12").
+  # Pane ids appear when the captain has asked for a split-pane fleet view and
+  # several crews share one window: killing the WINDOW there would take every
+  # other crew down with it. Kill only the pane in that case.
+  case "$1" in
+    %[0-9]*) tmux kill-pane -t "$1" 2>/dev/null || true ;;
+    *) tmux kill-window -t "$1" 2>/dev/null || true ;;
+  esac
 }
 
 # fm_backend_tmux_current_command: <target>'s live foreground process name -
