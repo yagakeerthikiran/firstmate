@@ -679,22 +679,40 @@ real_path_or_raw() {  # <path>
 # recorded firstmate's own home as the task worktree, and tangled the crewmate
 # turn-end hook into the primary's .claude/settings.local.json (a self-wake
 # loop, and a crewmate launched inside firstmate's own checkout).
-# A candidate must therefore have MOVED off the paths a fresh pane inherits: it
-# is inside some git repository, and it is neither the project's primary
-# checkout nor a firstmate home. Anything else keeps polling until the pane
-# settles. This is deliberately a "has the pane moved yet" test, not the
-# isolation verdict - validate_spawn_worktree owns that, including the
-# toplevel-identity and same-repository checks. Keeping those out of here
-# matters: a pane sitting in a SUBDIRECTORY of a worktree must be accepted as
-# settled so the guard can refuse it with its own explicit message, rather than
-# polled until the timeout hides the real reason.
+# A candidate must therefore have MOVED off the INHERITED path before it is
+# believed. This is deliberately a "has the pane published its real cwd yet"
+# test, and NOT the isolation verdict - validate_spawn_worktree owns that,
+# including toplevel identity and the same-repository check.
+#
+# Keeping the verdict out of here is load-bearing in two directions:
+#
+#   - A pane that legitimately settles somewhere unisolated (the project
+#     checkout itself, or a subdirectory of a worktree) must be ACCEPTED as
+#     settled, so the guard can refuse it with its own explicit message. Reject
+#     those here and the spawn dies on the 60s poll timeout instead, which hides
+#     the real reason. tests/fm-tangle-guard.test.sh and
+#     tests/fm-spawn-batch.test.sh both assert that explicit message.
+#
+#   - The stale read this whole comment is about is firstmate's own root/home
+#     appearing as the cwd of a project whose checkout is somewhere else. So
+#     those two paths are rejected ONLY when they are not the project itself.
+#     For a firstmate-repo task the project IS that root, and rejecting it would
+#     re-break the case above.
 path_is_isolated_worktree_candidate() {  # <path>
   local path=$1 real
   real=$(real_path_or_raw "$path")
+  # Still the launch cwd: treehouse has not moved the pane yet, keep polling.
   [ "$real" != "$PROJ_ABS_REAL" ] || return 1
+  # The stale inherited read this guard exists for. Only meaningful when the
+  # project lives somewhere else; for a firstmate-repo task these ARE the
+  # project and the check above already covered them.
   [ "$real" != "$FM_ROOT_REAL" ] || return 1
   [ "$real" != "$FM_HOME_REAL" ] || return 1
-  git -C "$path" rev-parse --show-toplevel >/dev/null 2>&1 || return 1
+  # Deliberately NO "is it a git repo" test. A pane that settles somewhere
+  # unisolated - a plain directory, or a subdirectory of the project - is
+  # SETTLED, and validate_spawn_worktree must get to say so in its own words.
+  # Screening those out here turns an explicit refusal into a silent 60s poll
+  # timeout that hides the reason.
   return 0
 }
 
