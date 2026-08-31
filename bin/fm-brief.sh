@@ -257,10 +257,20 @@ The report is the only thing that survives, so anything worth keeping must be in
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
    every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
+8. NEVER SIT AND WAIT ON GITHUB ACTIONS. For the KS repo, CI is 100% hermetic local
+   checks (py_compile, ruff, the unittest suites, shellcheck, php -l, the PHP suites) -
+   nothing in it needs GitHub. If Actions is not green within ~2 minutes, stop waiting and run:
+     /home/user/github/firstmate/data/ks-growth-program/fm-ci-local.sh --repo \"\$PWD\" [<sha>]
+   ~25s, same per-step verdict, exit 0 pass / 1 fail / 2 setup. Report its result WITH the sha
+   and any step it marked SKIPPED (a skipped step is not a passed step), then carry on.
+   Use fm-ci-observe.sh only to confirm the real GitHub check at merge time; it now reports
+   UNKNOWN, never green, when no checks exist. Waiting on a spinner for an answer available in
+   25 seconds is the single biggest time sink this programme has had - do not repeat it.
 
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
+**Then commit a copy into the project repo so the investigation is durable.** \`$DATA\` is firstmate-private and gitignored: a report that lives only there dies with this machine, and 84 investigations were found in exactly that state on 2026-08-30. Commit it under the project's own \`reports/agent-runs/\` convention on your scratch branch, push, and open a report-only PR. If the project has no such convention, say so in the report rather than inventing a location. Never commit secrets, credentials, customer PII, or raw private screenshots - a report that cannot be committed safely stays local, and you say why.
 Before reporting done, read and follow \`$FM_ROOT/.agents/skills/decision-hold-lifecycle/SKILL.md\` and pass its shared completion gate for the report and any visual review.
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
 If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; firstmate may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
@@ -365,6 +375,15 @@ $RULE1
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
    every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
+8. NEVER SIT AND WAIT ON GITHUB ACTIONS. For the KS repo, CI is 100% hermetic local
+   checks (py_compile, ruff, the unittest suites, shellcheck, php -l, the PHP suites) -
+   nothing in it needs GitHub. If Actions is not green within ~2 minutes, stop waiting and run:
+     /home/user/github/firstmate/data/ks-growth-program/fm-ci-local.sh --repo \"\$PWD\" [<sha>]
+   ~25s, same per-step verdict, exit 0 pass / 1 fail / 2 setup. Report its result WITH the sha
+   and any step it marked SKIPPED (a skipped step is not a passed step), then carry on.
+   Use fm-ci-observe.sh only to confirm the real GitHub check at merge time; it now reports
+   UNKNOWN, never green, when no checks exist. Waiting on a spinner for an answer available in
+   25 seconds is the single biggest time sink this programme has had - do not repeat it.
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.

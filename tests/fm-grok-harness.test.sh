@@ -126,6 +126,9 @@ test_fm_lock_recognizes_grok_holder() {
   cat > "$fakebin/ps" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
+  # fm-lock.sh reads process STATE, not just identity, so a live holder must
+  # report a live stat here (see tests/fm-lock.test.sh for the state machine).
+  *"stat="*) printf '%s\n' 'Sl'; exit 0 ;;
   *"comm="*) printf '%s\n' '/usr/local/bin/grok'; exit 0 ;;
   *"args="*) printf '%s\n' 'grok'; exit 0 ;;
 esac

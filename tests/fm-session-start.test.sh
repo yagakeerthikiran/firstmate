@@ -97,6 +97,9 @@ make_fake_ps_harness() {
 set -u
 harness=${FM_FAKE_HARNESS:-claude}
 case "$*" in
+  # fm-lock.sh reads process STATE, not just identity, so a live holder must
+  # report a live stat here (see tests/fm-lock.test.sh for the state machine).
+  *"stat="*) printf 'Sl\n'; exit 0 ;;
   *"comm="*) printf '/usr/local/bin/%s\n' "$harness"; exit 0 ;;
   *"args="*) printf '%s\n' "$harness"; exit 0 ;;
 esac

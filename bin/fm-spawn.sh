@@ -659,6 +659,8 @@ fi
 # once here so every downstream comparison uses the same physical form
 # (docs/herdr-backend.md "Known gaps").
 PROJ_ABS_REAL=$(cd "$PROJ_ABS" 2>/dev/null && pwd -P) || PROJ_ABS_REAL="$PROJ_ABS"
+FM_ROOT_REAL=$(cd "$FM_ROOT" 2>/dev/null && pwd -P) || FM_ROOT_REAL="$FM_ROOT"
+FM_HOME_REAL=$(cd "$FM_HOME" 2>/dev/null && pwd -P) || FM_HOME_REAL="$FM_HOME"
 
 real_path_or_raw() {  # <path>
   local path=$1 real
@@ -667,6 +669,51 @@ real_path_or_raw() {  # <path>
   else
     printf '%s\n' "$path"
   fi
+}
+
+# A brand-new tmux window can report a stale #{pane_current_path} - the tmux
+# server's own cwd, which for a firstmate-launched session is the firstmate
+# home - for the first poll or two, before the pane's shell has started and
+# published its real cwd. The worktree poll below used to accept any path that
+# merely differed from the project checkout, so it took that stale first read,
+# recorded firstmate's own home as the task worktree, and tangled the crewmate
+# turn-end hook into the primary's .claude/settings.local.json (a self-wake
+# loop, and a crewmate launched inside firstmate's own checkout).
+# A candidate must therefore have MOVED off the INHERITED path before it is
+# believed. This is deliberately a "has the pane published its real cwd yet"
+# test, and NOT the isolation verdict - validate_spawn_worktree owns that,
+# including toplevel identity and the same-repository check.
+#
+# Keeping the verdict out of here is load-bearing in two directions:
+#
+#   - A pane that legitimately settles somewhere unisolated (the project
+#     checkout itself, or a subdirectory of a worktree) must be ACCEPTED as
+#     settled, so the guard can refuse it with its own explicit message. Reject
+#     those here and the spawn dies on the 60s poll timeout instead, which hides
+#     the real reason. tests/fm-tangle-guard.test.sh and
+#     tests/fm-spawn-batch.test.sh both assert that explicit message.
+#
+#   - The stale read this whole comment is about is firstmate's own root/home
+#     appearing as the cwd of a project whose checkout is somewhere else. So
+#     those two paths are rejected ONLY when they are not the project itself.
+#     For a firstmate-repo task the project IS that root, and rejecting it would
+#     re-break the case above.
+path_is_isolated_worktree_candidate() {  # <path>
+  local path=$1 real
+  real=$(real_path_or_raw "$path")
+  # Still the launch cwd: treehouse has not moved the pane yet, keep polling.
+  [ "$real" != "$PROJ_ABS_REAL" ] || return 1
+  # The stale inherited read this guard exists for. Only meaningful when the
+  # project lives somewhere else; for a firstmate-repo task these ARE the
+  # project and the check above already covered them.
+  [ "$real" != "$FM_ROOT_REAL" ] || return 1
+  [ "$real" != "$FM_HOME_REAL" ] || return 1
+  # Deliberately NO "is it a git repo" test. A pane that settles somewhere
+  # unisolated - a plain directory, or a subdirectory of the project - is
+  # SETTLED, and validate_spawn_worktree must get to say so in its own words.
+  # Screening those out here turns an explicit refusal into a silent 60s poll
+  # timeout that hides the reason.
+  return 0
 }
 
 # Session-provider container-ensure + task creation. tmux stays exactly as P1
@@ -712,7 +759,7 @@ validate_spawn_worktree() {  # <source> <inspect-target>
       *)  proj_common=$(real_path_or_raw "$PROJ_ABS/$proj_common_src") ;;
     esac
   fi
-  if [ -z "$wt_real" ] || [ -z "$wt_top_real" ] || [ "$wt_real" != "$wt_top_real" ] || [ "$wt_real" = "$proj_real" ] || [ -z "$wt_common" ] || [ -z "$proj_common" ] || [ "$wt_common" != "$proj_common" ]; then
+  if [ -z "$wt_real" ] || [ -z "$wt_top_real" ] || [ "$wt_real" != "$wt_top_real" ] || [ "$wt_real" = "$proj_real" ] || [ -z "$wt_common" ] || [ -z "$proj_common" ] || [ "$wt_common" != "$proj_common" ] || [ "$wt_real" = "$FM_ROOT_REAL" ] || [ "$wt_real" = "$FM_HOME_REAL" ]; then
     echo "error: $source did not yield an isolated worktree (resolved '$WT'; worktree root '${wt_top:-none}'; primary '$PROJ_ABS'); refusing to launch to avoid tangling the primary checkout. Inspect target $inspect_target" >&2
     exit 1
   fi
@@ -873,7 +920,7 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # PROJ_ABS on the very first poll, before the pane has actually moved.
   for _ in $(seq 1 60); do
     p=$(spawn_current_path "$WT_TARGET" || true)
-    if [ -n "$p" ] && [ "$(real_path_or_raw "$p")" != "$PROJ_ABS_REAL" ]; then
+    if [ -n "$p" ] && path_is_isolated_worktree_candidate "$p"; then
       WT="$p"
       break
     fi
