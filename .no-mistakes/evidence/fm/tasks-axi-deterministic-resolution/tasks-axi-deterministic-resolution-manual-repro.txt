@@ -1,0 +1,26 @@
+Manual end-to-end repro of the captain's reported scenario:
+a root-owned npm global tasks-axi at 0.2.3 and a user install at 0.2.5 (floor 0.2.4)
+coexist on PATH, with the root install listed first (as an interactive
+~/.bashrc that re-exports system dirs would produce).
+
+=== Scenario: interactive shell re-exports /usr/local/bin ahead of ~/.local/bin ===
+PATH (misordered, root install 0.2.3 first, user install 0.2.5 with floor 0.2.4 second):
+<tmp>/usr-local-bin:<tmp>/local-bin
+
+--- Before fix (bare PATH order, what plain PATH lookup would pick) ---
+$ command -v tasks-axi
+<tmp>/usr-local-bin/tasks-axi
+$ tasks-axi --version
+0.2.3          # below floor 0.2.4 -> crew would trip FM_TASKS_AXI_MIN
+
+--- After sourcing bin/fm-tasks-axi-lib.sh (deterministic resolution) ---
+resolved from: path-later
+resolved bin:  <tmp>/local-bin/tasks-axi
+resolved ver:  0.2.5
+bare tasks-axi now resolves to: <tmp>/local-bin/tasks-axi
+and reports: 0.2.5
+fm_tasks_axi_compatible? yes
+
+Result: sourcing the library deterministically walks past the stale
+PATH-first install and selects the compatible build for the whole process
+tree, matching the required behavior in the user intent.
