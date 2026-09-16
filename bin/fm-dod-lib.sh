@@ -199,6 +199,7 @@ fm_dod_block() {  # <mode> <task-id>
 Delivery contract: mode=direct-PR
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
+Your PR body must carry the \`AgentLab-Evidence-Commit:\`/\`Preservation-Manifest:\` coordinate lines and the crew identity block from this brief's \`# Evidence preservation\` section before it is ready for review.
 When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
 Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
 EOF
@@ -221,6 +222,7 @@ Delivery contract: mode=no-mistakes
 The task is complete only when committed on your branch.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
 Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
+Your PR body must carry the \`AgentLab-Evidence-Commit:\`/\`Preservation-Manifest:\` coordinate lines and the crew identity block from this brief's \`# Evidence preservation\` section before it is ready for review.
 
 You drive no-mistakes by responding to its gates, not by implementing fixes.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.

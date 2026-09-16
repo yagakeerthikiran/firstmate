@@ -90,7 +90,17 @@
 # explicit captain instruction and never skips the live green check, the
 # away-grant check, or a captain hold.
 #
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>] [-- <extra forge merge args>]
+# Merge readiness also requires the AgentLab evidence-preservation gate
+# (docs/evidence-preservation-lifecycle.md in yagakeerthikiran/agentlab-shared-memory):
+# a verified final checkpoint receipt for the task, and, for a GitHub pull
+# request, a canonical manifest (bin/fm-preservation-manifest.sh) pinned to the
+# live head with preservation_status=complete. There is no --force for this
+# gate; only --preservation-waived-by-captain "<verbatim words>" bypasses it,
+# recording the captain's words as an auditable waiver receipt first (the same
+# flag semantics as bin/fm-teardown.sh's identical gate).
+#
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>]
+#          [--preservation-waived-by-captain "<verbatim words>"] [-- <extra forge merge args>]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
 # an auto-merge-queued or unconfirmed request leaves the poll armed and records
@@ -115,6 +125,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-merge-authority-lib.sh"
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+# shellcheck source=bin/fm-preservation-lib.sh
+. "$SCRIPT_DIR/fm-preservation-lib.sh"
 
 if [ "$#" -lt 2 ]; then
   echo "error: invalid PR merge request" >&2
@@ -139,6 +151,7 @@ PROJECT_URL="https://$FM_PR_HOST/$FM_PR_PATH"
 shift 2
 ATTENDED_OVERRIDE=false
 ALLOW_RED=()
+PRESERVATION_WAIVER=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --attended-override)
@@ -157,6 +170,16 @@ while [ "$#" -gt 0 ]; do
       ;;
     --allow-red=*)
       echo "error: --allow-red requires a separate check name argument" >&2
+      exit 2
+      ;;
+    --preservation-waived-by-captain)
+      [ -n "${2:-}" ] || { echo "error: --preservation-waived-by-captain requires the captain's verbatim words as its value" >&2; exit 2; }
+      [ -z "$PRESERVATION_WAIVER" ] || { echo "error: --preservation-waived-by-captain may be specified only once" >&2; exit 2; }
+      PRESERVATION_WAIVER=$2
+      shift 2
+      ;;
+    --preservation-waived-by-captain=*)
+      echo "error: --preservation-waived-by-captain requires a separate verbatim-words argument" >&2
       exit 2
       ;;
     --) shift; break ;;
@@ -891,6 +914,67 @@ require_recorded_pr_identity() {
   return 1
 }
 
+# require_preservation_ready: the AgentLab evidence-preservation merge gate
+# (docs/evidence-preservation-lifecycle.md in yagakeerthikiran/agentlab-shared-memory
+# is the canonical contract; bin/fm-preservation-manifest.sh is the mechanical
+# manifest enforcement for GitHub). Called only after the live head is known
+# (github_verify_mergeable/gitlab_verify_mergeable have set FM_PR_MERGE_HEAD)
+# and before any forge merge call, for the same reason $away_status is
+# re-checked there: this narrows the window between "preservation was proven"
+# and "the merge actually landed" as tightly as the rest of the gate does.
+# There is no --force on this script; the only bypass is
+# --preservation-waived-by-captain, which records the captain's own verbatim
+# words as an auditable waiver receipt before the merge proceeds - the same
+# flag semantics as bin/fm-teardown.sh's identical gate.
+require_preservation_ready() {
+  if [ -n "$PRESERVATION_WAIVER" ]; then
+    fm_preservation_record_waiver "$STATE" "$ID" "$PRESERVATION_WAIVER" || {
+      echo "error: PR merge refused: could not record the captain's preservation waiver for $ID; nothing was changed" >&2
+      return 1
+    }
+    return 0
+  fi
+  local worktree
+  worktree=$(grep '^worktree=' "$META" | tail -1 | cut -d= -f2- || true)
+  if ! fm_preservation_verify "$STATE" "$ID" final "$worktree"; then
+    echo "error: PR merge refused: $FM_PRESERVATION_VERIFY_ERROR" >&2
+    echo "Publish a final AgentLab checkpoint and record its receipt with bin/fm-preservation-record.sh, then retry; or get the captain's explicit words and retry with --preservation-waived-by-captain \"<verbatim words>\"." >&2
+    return 1
+  fi
+  # The canonical PR-manifest contract (docs/PRESERVATION_MANIFEST.md in
+  # yagakeerthikiran/drivelog) is GitHub-specific; bin/fm-preservation-manifest.sh
+  # only generates manifests for GitHub pull requests. A GitLab merge request
+  # still passes the final-receipt check above; extending manifest coverage to
+  # GitLab is future work, not a weakening of this gate.
+  [ "$PROVIDER" = github ] || return 0
+  local agentlab_root manifest_rel manifest_json head_in_manifest status_in_manifest
+  agentlab_root=$(fm_preservation_agentlab_root "$FM_HOME")
+  manifest_rel="manifests/$PR_OWNER/$PR_REPO/pr-$PR_NUMBER.json"
+  if [ ! -d "$agentlab_root/.git" ]; then
+    echo "error: PR merge refused: AgentLab clone missing at $agentlab_root; cannot verify the preservation manifest" >&2
+    return 1
+  fi
+  if ! git -C "$agentlab_root" fetch origin --quiet; then
+    echo "error: PR merge refused: could not fetch $agentlab_root's origin to verify the preservation manifest" >&2
+    return 1
+  fi
+  if ! manifest_json=$(git -C "$agentlab_root" show "origin/main:$manifest_rel" 2>/dev/null); then
+    echo "error: PR merge refused: no preservation manifest at $manifest_rel on agentlab origin/main; run bin/fm-preservation-manifest.sh $ID --pr $URL first" >&2
+    return 1
+  fi
+  head_in_manifest=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).application_head_sha||"")' "$manifest_json")
+  status_in_manifest=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).preservation_status||"")' "$manifest_json")
+  if [ "$head_in_manifest" != "$FM_PR_MERGE_HEAD" ]; then
+    echo "error: PR merge refused: preservation manifest $manifest_rel pins head $head_in_manifest but the live PR head is $FM_PR_MERGE_HEAD; regenerate the manifest with bin/fm-preservation-manifest.sh $ID --pr $URL" >&2
+    return 1
+  fi
+  if [ "$status_in_manifest" != complete ]; then
+    echo "error: PR merge refused: preservation manifest $manifest_rel has preservation_status=$status_in_manifest, not complete" >&2
+    return 1
+  fi
+  return 0
+}
+
 FM_PR_GITHUB_AUTO_REQUESTED=false
 FM_PR_GITHUB_MERGE_ACCEPTED=false
 FM_PR_GITHUB_CALLER_METHOD=
@@ -1034,6 +1118,7 @@ case "$PROVIDER" in
     fi
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
     github_verify_mergeable || exit 1
+    require_preservation_ready || exit 1
     # This last presence and authority read narrows the publication race to the
     # forge handoff; without a shared lock, a residual sub-second race remains.
     away_status=0
@@ -1081,6 +1166,7 @@ case "$PROVIDER" in
     ;;
   gitlab)
     gitlab_verify_mergeable || exit 1
+    require_preservation_ready || exit 1
     # --sha binds the merge to the head this run verified, so a push that lands
     # in between is refused by GitLab instead of merged unverified. --yes only
     # skips the interactive confirmation, which no supervised run can answer;

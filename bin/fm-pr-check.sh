@@ -5,6 +5,10 @@
 # live only in a private sidecar and are never interpolated into shell source.
 # A GitHub pull request URL and a GitLab merge request URL are both accepted,
 # including a merge request on a self-hosted GitLab instance.
+# For a GitHub PR, also warns (never fails) to stderr when the PR body is
+# missing the AgentLab-Evidence-Commit/Preservation-Manifest coordinate lines
+# (docs/PRESERVATION_MANIFEST.md in yagakeerthikiran/drivelog); bin/fm-pr-merge.sh
+# owns the actual preservation merge gate.
 # Usage: fm-pr-check.sh <task-id> <pr-url>
 set -eu
 
@@ -77,6 +81,22 @@ if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/d
   if REMOTE_HEAD=$(cd "$WT" && gh pr view "$URL" --json headRefOid -q .headRefOid 2>/dev/null) \
     && fm_pr_head_valid "$REMOTE_HEAD"; then
     PR_HEAD=$REMOTE_HEAD
+  fi
+fi
+
+# Warn-only: this script's job is arming the merge poll, not gating the merge.
+# The AgentLab-Evidence-Commit/Preservation-Manifest PR-body coordinate lines
+# (docs/PRESERVATION_MANIFEST.md in yagakeerthikiran/drivelog; the same lines
+# bin/fm-dod-lib.sh requires of a ship task's definition of done) are what a
+# project's own preservation-manifest CI check reads; bin/fm-pr-merge.sh's own
+# preservation gate checks the AgentLab manifest directly and does not depend
+# on this warning. This is an early, non-blocking heads-up so a missing
+# coordinate line is visible as soon as the PR is armed, not only at CI.
+if [ "$PROVIDER" = github ] && command -v gh >/dev/null 2>&1; then
+  PR_BODY=$(gh pr view "$URL" --json body -q .body 2>/dev/null || true)
+  if ! printf '%s\n' "$PR_BODY" | grep -q '^AgentLab-Evidence-Commit:' \
+    || ! printf '%s\n' "$PR_BODY" | grep -q '^Preservation-Manifest:'; then
+    printf 'warning: PR %s body is missing the AgentLab-Evidence-Commit/Preservation-Manifest coordinate lines\n' "$URL" >&2
   fi
 fi
 
