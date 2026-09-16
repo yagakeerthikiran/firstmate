@@ -10,8 +10,8 @@
 # fixture without it would let a naive implementation pass.
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 # bin/fm-harness.sh checks verified ENV markers before ancestry. Muse is
 # markerless, so an inherited Cursor/Claude/Pi/Grok marker would outrank the
@@ -142,6 +142,8 @@ EOF
 run_muse_spawn() {  # <home> <proj> <wt> <fakebin> <id> [extra args...]
   local home=$1 proj=$2 wt=$3 fakebin=$4 id=$5
   shift 5
+  fm_test_preservation_satisfy "$home/state" "$id" "$home/agentlab-fixture" initial
+  FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
   FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
@@ -426,7 +428,10 @@ EOF
   assert_absent "$home/state/$id.busy-gen" "muse spawn armed a busy record it can never clear"
   printf 'binding_id=retired\nsession_log=%s\n' "$prior" > "$home/state/$id.muse-session-current"
 
+  fm_test_preservation_satisfy "$home/state" "$id" "$home/agentlab-fixture" final \
+    "$(git -C "$wt" rev-parse HEAD)"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
     PATH="$fakebin:$PATH" "$TEARDOWN" "$id" --force >/dev/null 2>&1 \
     || fail "muse teardown failed"
   assert_absent "$binding" "muse session binding survived teardown"

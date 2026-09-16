@@ -2,8 +2,8 @@
 # Regression tests for cleanup endpoint and worktree-slot identity validation.
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 TEARDOWN="$ROOT/bin/fm-teardown.sh"
 TMP_ROOT=$(fm_test_tmproot fm-teardown-endpoint-safety)
@@ -183,6 +183,8 @@ test_non_pool_teardown_ignores_task_set_lock() {
     fail "could not stage an in-progress task publication"
   }
 
+  fm_test_preservation_satisfy "$dir/home/state" "$id" "$dir/agentlab-fixture" final
+  FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" \
     || fail "non-pool teardown was blocked by an unrelated task publication: $(cat "$dir/stderr")"
   assert_absent "$dir/home/state/$id.meta" "non-pool teardown left task metadata"
@@ -222,6 +224,8 @@ test_metadata_lock_serializes_destructive_cleanup() {
     fail "could not stage a held metadata lock"
   }
 
+  fm_test_preservation_satisfy "$dir/home/state" "$id" "$dir/agentlab-fixture" final
+  FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" &
   teardown_pid=$!
   sleep 0.2
@@ -404,8 +408,10 @@ SH
     "window=$session:$target" "endpoint_task_id=$target_id" \
     "worktree=$dir/nonexistent-worktree" "project=$dir/nonexistent-project" \
     "kind=scout" "mode=no-mistakes"
+  fm_test_preservation_satisfy "$dir/home/state" "$target_id" "$dir/agentlab-fixture" final
   env -u TMUX -u TMUX_PANE FM_TEST_TMUX_SOCKET="$socket_id" \
     FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" FM_RUNTIME_LOG="$dir/runtime.log" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
     PATH="$dir/fakebin:$PATH" "$TEARDOWN" "$target_id" --force \
     > "$dir/valid.out" 2> "$dir/valid.err" \
     || fail "isolated valid endpoint teardown failed: $(cat "$dir/valid.err")"
@@ -556,6 +562,8 @@ test_sole_slot_record_still_tears_down() {
   ( cd "$dir/other-worktree" && exec sleep 30 ) &
   worker=$!
 
+  fm_test_preservation_satisfy "$dir/home/state" "$id" "$dir/agentlab-fixture" final
+  FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" \
     || fail "teardown of a task that solely holds its slot failed: $(cat "$dir/stderr")"
   assert_absent "$dir/home/state/$id.meta" "uncontested teardown left the task record"
@@ -592,6 +600,8 @@ SH
     "window=firstmate:fm-$id" "endpoint_task_id=$id" \
     "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
 
+  fm_test_preservation_satisfy "$dir/home/state" "$id" "$dir/agentlab-fixture" final
+  FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" \
     || fail "teardown refused its recorded endpoint after it changed directory: $(cat "$dir/stderr")"
   assert_absent "$dir/home/state/$id.meta" "moved-endpoint teardown left the task record"
@@ -708,7 +718,9 @@ test_remote_seeded_home_returns_its_uncontested_slot() {
     "window=firstmate:fm-$id" "endpoint_task_id=$id" \
     "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
 
+  fm_test_preservation_satisfy "$dir/home/state" "$id" "$dir/agentlab-fixture" final
   set +e
+  FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
   rc=$?
   set -e
@@ -870,7 +882,9 @@ test_reassigned_pool_slot_finishes_own_cleanup_without_touching_the_slot() {
   ( cd "$dir/worktree" && exec sleep 30 ) &
   worker=$!
 
+  fm_test_preservation_satisfy "$dir/home/state" "$id" "$dir/agentlab-fixture" final
   set +e
+  FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
   rc=$?
   set -e
@@ -901,9 +915,12 @@ test_reassigned_pool_slot_finishes_own_cleanup_without_touching_the_slot() {
   ( cd "$dir/worktree" && exec sleep 30 ) &
   worker=$!
 
+  fm_test_preservation_satisfy "$dir/home/state" "$id" "$dir/agentlab-fixture" final \
+    "$(git -C "$dir/worktree" rev-parse HEAD)"
   set +e
   FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
   FM_RUNTIME_LOG="$dir/runtime.log" PATH="$dir/fakebin:$PATH" \
+  FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
     "$TEARDOWN" "$id" > "$dir/stdout" 2> "$dir/stderr"
   rc=$?
   set -e
@@ -950,6 +967,8 @@ test_own_and_absent_slot_claims_still_tear_down() {
     "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
   claim_pool_slot "$dir" "$id"
 
+  fm_test_preservation_satisfy "$dir/home/state" "$id" "$dir/agentlab-fixture" final
+  FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" \
     || fail "teardown of a task holding its own slot claim failed: $(cat "$dir/stderr")"
   assert_absent "$dir/home/state/$id.meta" "own-claim teardown left the task record"
@@ -963,6 +982,8 @@ test_own_and_absent_slot_claims_still_tear_down() {
     "window=firstmate:fm-$id" "endpoint_task_id=$id" \
     "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
 
+  fm_test_preservation_satisfy "$dir/home/state" "$id" "$dir/agentlab-fixture" final
+  FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" \
     || fail "teardown of an unclaimed slot failed: $(cat "$dir/stderr")"
   assert_absent "$dir/home/state/$id.meta" "unclaimed-slot teardown left the task record"

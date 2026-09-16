@@ -3,8 +3,8 @@
 # terminal adapter primitives in bin/backends/orca.sh.
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-backend-orca-tests)
 # A claude spawn writes workspace trust into the launching user's own store,
@@ -488,9 +488,11 @@ test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails() {
   printf '{"ok":true,"result":{"worktree":{"id":"wt-pathless-cleanup"}}}\n' > "$RESP/3.out"
   printf '{"ok":false,"error":{"code":"worktree_not_removed","message":"worktree not removed"}}\n' > "$RESP/4.out"
   printf '{"ok":false,"error":{"code":"worktree_not_removed","message":"worktree not removed"}}\n' > "$RESP/5.out"
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" initial
   out=$( HOME="$SPAWN_HOME" CLAUDE_CONFIG_DIR='' PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" FM_SPAWN_NO_GUARD=1 \
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
     "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
   status=$?
   [ "$status" -ne 0 ] || fail "Orca spawn should fail when path parsing and cleanup fail"
@@ -523,10 +525,12 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   printf '1\n' > "$RESP/1.exit"
   printf '{"ok":true,"result":{"repo":{"id":"repo-spawn"}}}\n' > "$RESP/2.out"
   printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn","path":"%s"},"terminal":{"handle":"term-spawn"}}}\n' "$wt" > "$RESP/3.out"
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" initial
   out=$( HOME="$SPAWN_HOME" CLAUDE_CONFIG_DIR='' PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
   expect_code 0 $? "fm-spawn.sh --backend orca should succeed with fake Orca"$'\n'"$out"
   assert_contains "$out" "spawned $id harness=claude kind=ship mode=no-mistakes yolo=off window=fm-$id worktree=$wt" \
     "spawn output missing Orca window/worktree summary"
@@ -559,9 +563,11 @@ test_spawn_refuses_orca_secondmate_before_home_mutation() {
   printf 'claude\n' > "$config/crew-harness"
   touch "$state/.last-watcher-beat"
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" initial
   out=$( FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$subhome" claude --backend orca --secondmate 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-spawn.sh" "$id" "$subhome" claude --backend orca --secondmate 2>&1 )
   status=$?
   set +e
   [ "$status" -ne 0 ] || fail "backend=orca --secondmate should be refused"
@@ -585,10 +591,12 @@ test_spawn_refuses_orca_when_runtime_not_ready() {
   touch "$state/.last-watcher-beat"
   orca_case runtime-down-spawn
   printf '{"ok":true,"result":{"runtime":{"reachable":false,"state":"starting"}}}\n' > "$RESP/1.out"
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" initial
   out=$( HOME="$SPAWN_HOME" CLAUDE_CONFIG_DIR='' PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" FM_ORCA_STATUS_RESPONSE=sequence \
     FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
   status=$?
   [ "$status" -ne 0 ] || fail "fm-spawn.sh --backend orca should refuse when Orca runtime is not ready"
   assert_contains "$out" "requires a ready Orca runtime" \
@@ -616,10 +624,12 @@ test_spawn_refuses_orca_nonisolated_worktree() {
   printf '1\n' > "$RESP/1.exit"
   printf '{"ok":true,"result":{"repo":{"id":"repo-bad"}}}\n' > "$RESP/2.out"
   printf '{"ok":true,"result":{"worktree":{"id":"wt-bad","path":"%s"},"terminal":{"handle":"term-bad"}}}\n' "$proj" > "$RESP/3.out"
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" initial
   out=$( HOME="$SPAWN_HOME" CLAUDE_CONFIG_DIR='' PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
   status=$?
   expect_code 1 "$status" "fm-spawn.sh --backend orca should refuse a primary checkout worktree"
   assert_contains "$out" "orca worktree create did not yield an isolated worktree" \
@@ -651,10 +661,12 @@ test_spawn_removes_orca_worktree_when_terminal_create_fails() {
   printf '{"ok":true,"result":{"repo":{"id":"repo-terminal-fail"}}}\n' > "$RESP/2.out"
   printf '{"ok":true,"result":{"worktree":{"id":"wt-terminal-fail","path":"%s"}}}\n' "$wt" > "$RESP/3.out"
   printf '1\n' > "$RESP/4.exit"
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" initial
   out=$( HOME="$SPAWN_HOME" CLAUDE_CONFIG_DIR='' PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
   status=$?
   [ "$status" -ne 0 ] || fail "Orca spawn should fail when terminal creation fails"
   assert_absent "$state/$id.meta" "terminal-create abort should not record metadata after successful cleanup"
@@ -685,10 +697,12 @@ test_spawn_preserves_orca_metadata_when_abort_cleanup_fails() {
   printf '{"ok":true,"result":{"worktree":{"id":"wt-cleanup-fail","path":"%s"}}}\n' "$wt" > "$RESP/3.out"
   printf '1\n' > "$RESP/4.exit"
   printf '1\n' > "$RESP/5.exit"
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" initial
   out=$( HOME="$SPAWN_HOME" CLAUDE_CONFIG_DIR='' PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
   status=$?
   [ "$status" -ne 0 ] || fail "Orca spawn should fail when terminal creation and abort cleanup fail"
   assert_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm'$'\x1f''--worktree'$'\x1f''id:wt-cleanup-fail'$'\x1f''--force'$'\x1f''--json' \
@@ -717,10 +731,12 @@ test_spawn_releases_orca_resources_when_metadata_write_fails() {
   printf '{"ok":true,"result":{"repo":{"id":"repo-meta-fail"}}}\n' > "$RESP/2.out"
   printf '{"ok":true,"result":{"worktree":{"id":"wt-meta-fail","path":"%s"}}}\n' "$wt" > "$RESP/3.out"
   printf '{"ok":true,"result":{"terminal":{"handle":"term-meta-fail"}}}\n' > "$RESP/4.out"
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" initial
   out=$( HOME="$SPAWN_HOME" CLAUDE_CONFIG_DIR='' PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend orca 2>&1 )
   status=$?
   [ "$status" -ne 0 ] || fail "Orca spawn should fail when metadata cannot be written"
   assert_contains "$out" "task record for $id could not be published" \
@@ -837,9 +853,11 @@ test_scout_teardown_removes_orca_worktree_via_helper() {
   printf '{"ok":true,"result":{"worktree":{"id":"wt-teardown","path":"%s"}}}\n' "$wt" > "$RESP/1.out"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   expect_code 0 "$rc" "Orca scout teardown should succeed once report exists"$'\n'"$out"
@@ -874,9 +892,11 @@ test_scout_teardown_refuses_orca_id_path_mismatch() {
   printf '{"ok":true,"result":{"worktree":{"id":"wt-scout-mismatch","path":"%s"}}}\n' "$other_wt" > "$RESP/1.out"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "Orca scout teardown should refuse when id path differs from worktree="
@@ -909,9 +929,11 @@ test_teardown_removes_orca_worktree_when_path_missing() {
   orca_case missing-path
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   expect_code 0 "$rc" "Orca teardown should release helpers even when the path is absent"$'\n'"$out"
@@ -944,9 +966,11 @@ test_teardown_preserves_metadata_when_orca_remove_error_json() {
   printf '{"ok":false,"error":{"code":"worktree_not_removed","message":"worktree not removed"}}\n' > "$RESP/2.out"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "Orca teardown should fail when worktree removal returns ok:false JSON"
@@ -972,9 +996,11 @@ test_scout_teardown_refuses_orca_missing_report_when_path_missing() {
   orca_case missing-report
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "Orca scout teardown should refuse without a report even when the path is absent"
@@ -1002,9 +1028,11 @@ test_ship_teardown_refuses_orca_missing_worktree_path() {
   orca_case missing-ship-path
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "Orca ship teardown should refuse a missing worktree path"
@@ -1034,9 +1062,11 @@ test_ship_teardown_removes_orca_worktree_when_id_path_matches() {
   printf '{"ok":true,"result":{"worktree":{"id":"wt-ship-match","path":"%s"}}}\n' "$wt" > "$RESP/1.out"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final "$(git -C "$wt" rev-parse HEAD)"
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   expect_code 0 "$rc" "Orca ship teardown should succeed when the id path matches the inspected worktree"$'\n'"$out"
@@ -1069,9 +1099,11 @@ test_ship_teardown_refuses_orca_unresolvable_worktree_id() {
   printf '1\n' > "$RESP/1.exit"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "Orca ship teardown should refuse when the worktree id cannot be resolved"
@@ -1108,9 +1140,11 @@ test_ship_teardown_refuses_orca_id_path_mismatch() {
   printf '{"ok":true,"result":{"worktree":{"id":"wt-ship-mismatch","path":"%s"}}}\n' "$other_wt" > "$RESP/1.out"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "Orca ship teardown should refuse when the id path differs from worktree="
@@ -1145,9 +1179,11 @@ test_teardown_refuses_orca_missing_worktree_id() {
   orca_case missing-id
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "Orca teardown should refuse missing orca_worktree_id"
@@ -1177,9 +1213,11 @@ test_teardown_refuses_orca_worktree_without_terminal_handle() {
   orca_case no-terminal
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$state" "$id" "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
-    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "Orca teardown accepted metadata without a terminal handle"
@@ -1218,8 +1256,11 @@ test_secondmate_force_teardown_removes_orca_child_via_orca() {
   add_tmux_fake "$FB"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$home/state" domain "$TMP_ROOT/agentlab-fixture" final \
+    "0000000000000000000000000000000000000000"
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
-    FM_ROOT_OVERRIDE="$neutral" FM_HOME="$home" "$ROOT/bin/fm-teardown.sh" domain --force 2>&1 )
+    FM_ROOT_OVERRIDE="$neutral" FM_HOME="$home" FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" domain --force 2>&1 )
   rc=$?
   set -e
   expect_code 0 "$rc" "forced secondmate teardown should remove Orca child work through Orca"$'\n'"$out"
@@ -1261,8 +1302,10 @@ test_secondmate_force_teardown_refuses_orca_child_id_path_mismatch() {
   add_tmux_fake "$FB"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$home/state" domain "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
-    FM_ROOT_OVERRIDE="$neutral" FM_HOME="$home" "$ROOT/bin/fm-teardown.sh" domain --force 2>&1 )
+    FM_ROOT_OVERRIDE="$neutral" FM_HOME="$home" FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" domain --force 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "forced secondmate teardown should refuse mismatched Orca child id/path"
@@ -1301,8 +1344,10 @@ test_secondmate_force_teardown_refuses_partial_orca_child() {
   add_tmux_fake "$FB"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
+  fm_test_preservation_satisfy "$home/state" domain "$TMP_ROOT/agentlab-fixture" final
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
-    FM_ROOT_OVERRIDE="$neutral" FM_HOME="$home" "$ROOT/bin/fm-teardown.sh" domain --force 2>&1 )
+    FM_ROOT_OVERRIDE="$neutral" FM_HOME="$home" FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
+        "$ROOT/bin/fm-teardown.sh" domain --force 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "forced secondmate teardown accepted a child with no terminal identity"

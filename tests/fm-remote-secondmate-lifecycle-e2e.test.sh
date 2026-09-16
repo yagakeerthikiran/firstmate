@@ -2,8 +2,8 @@
 # Full remote secondmate lifecycle over the deterministic generic SSH boundary.
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 # shellcheck source=tests/remote-herdr-fixture.sh
 . "$(dirname "${BASH_SOURCE[0]}")/remote-herdr-fixture.sh"
 # shellcheck source=tests/herdr-client-pair-fixture.sh
@@ -1276,6 +1276,15 @@ while [ ! -f "$TMP_ROOT/launch.entered" ]; do
   [ "$launch_wait" -le 1500 ] || fail "remote respawn never reached its blocked launch"
   sleep 0.02
 done
+# The retirement's actual preservation check runs nested, on the "remote" side
+# (bin/fm-remote-secondmate-control.sh's cmd_retire re-invokes fm-teardown.sh
+# with FM_HOME=$FM_ROOT there, i.e. $REMOTE_ROOT), which never inherits this
+# test's own FM_PRESERVATION_AGENTLAB_ROOT override across the (faked) SSH
+# hop - matching real remote dispatch, which never forwards local env vars
+# either. Satisfy the gate at the default AgentLab root it resolves there
+# instead, via a symlink into a fixture built once for this file.
+mkdir -p "$REMOTE_ROOT/projects"
+ln -sfn "$TMP_ROOT/agentlab-fixture/src" "$REMOTE_ROOT/projects/agentlab-shared-memory"
 remote_env "$ROOT/bin/fm-teardown.sh" ios > "$TMP_ROOT/teardown-serialized.out" 2>&1 &
 teardown_pid=$!
 sleep 0.2
@@ -1288,6 +1297,21 @@ if ! wait "$spawn_retirement_pid"; then
 fi
 sleep 0.2
 kill -0 "$teardown_pid" 2>/dev/null || fail "remote retirement bypassed an active backlog handoff"
+# The nested preservation check resolves $REMOTE_HOME's default-branch head the
+# same way _fm_preservation_default_branch_head does: origin/HEAD's branch
+# first, local main/master only as a fallback. Match that exact precedence
+# here rather than assuming local main, or the receipt's app_head silently
+# targets the wrong ref.
+remote_default_branch_ref=$(git -C "$REMOTE_HOME" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+if [ -n "$remote_default_branch_ref" ]; then
+  remote_default_branch_head=$(git -C "$REMOTE_HOME" rev-parse --verify --quiet "${remote_default_branch_ref}^{commit}" 2>/dev/null || true)
+else
+  remote_default_branch_head=
+fi
+[ -n "$remote_default_branch_head" ] \
+  || remote_default_branch_head=$(git -C "$REMOTE_HOME" rev-parse main 2>/dev/null || git -C "$REMOTE_HOME" rev-parse master 2>/dev/null)
+fm_test_preservation_satisfy "$REMOTE_HOME/state/parent-route" ios "$TMP_ROOT/agentlab-fixture" final \
+  "$remote_default_branch_head"
 touch "$TMP_ROOT/handoff.release"
 wait "$handoff_holder_pid" || fail "handoff lock holder failed to release"
 if ! wait "$teardown_pid"; then

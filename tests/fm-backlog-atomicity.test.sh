@@ -23,8 +23,8 @@
 # deliberately not asserted here.
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 # An exported TASKS_AXI_BACKEND would outrank each case's .tasks.toml fixture
 # in fm_tasks_axi_backend, so the backend cases must start from a clean slate.
@@ -597,9 +597,11 @@ run_spawn() {  # <case-dir> <args...>
   # store (bin/fm-claude-trust.sh), so it runs against a throwaway HOME;
   # without it this suite would write the developer's real ~/.claude.json.
   mkdir -p "$case_dir/user-home"
+  fm_test_preservation_satisfy "$(home_of "$case_dir")/state" "$1" "$case_dir/agentlab-fixture" initial
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$(home_of "$case_dir")" HOME="$case_dir/user-home" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$case_dir/wt" TMUX="fake,1,0" \
     CLAUDE_CONFIG_DIR='' \
+    FM_PRESERVATION_AGENTLAB_ROOT="$case_dir/agentlab-fixture/src" \
     PATH="$case_dir/fakebin:$PATH" \
     "$SPAWN" "$@" 2>&1
 }
@@ -615,8 +617,11 @@ run_ship_spawn() {  # <case-dir> <id>
 run_teardown() {  # <case-dir> <id> [args...]
   local case_dir=$1
   shift
+  fm_test_preservation_satisfy "$(home_of "$case_dir")/state" "$1" "$case_dir/agentlab-fixture" final \
+    "0000000000000000000000000000000000000000"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$(home_of "$case_dir")" \
     PATH="$case_dir/fakebin:$PATH" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$case_dir/agentlab-fixture/src" \
     "$TEARDOWN" "$@" 2>&1
 }
 
@@ -1090,9 +1095,11 @@ test_completion_targets_a_nested_relative_data_directory() {
   tasks-axi start "$id" --file "$backlog" >/dev/null
   write_task_meta "$case_dir" "$id" ship local-only "spawn_gen=spawn-relative-data"
 
+  fm_test_preservation_satisfy "$(home_of "$case_dir")/state" "$id" "$case_dir/agentlab-fixture" final
   out=$(cd "$case_dir" && \
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$(home_of "$case_dir")" \
     FM_DATA_OVERRIDE="$relative_data" PATH="$case_dir/fakebin:$PATH" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$case_dir/agentlab-fixture/src" \
     "$TEARDOWN" "$id" 2>&1) \
     || fail "relative-data teardown failed: $out"
   [ "$(tasks-axi show "$id" --file "$backlog" 2>/dev/null | sed -n 's/^  state: *//p' | head -1)" = "done" ] \
@@ -1478,10 +1485,12 @@ test_deferred_signal_verification_outlives_an_unresponsive_tasks_axi() {
   # and exit - the outer `timeout -k 5 30` only turns a regression back into
   # the lock-held-forever hang it exists to catch.
   mkdir -p "$case_dir/user-home"
+  fm_test_preservation_satisfy "$(home_of "$case_dir")/state" "$id" "$case_dir/agentlab-fixture" initial
   out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$(home_of "$case_dir")" \
     HOME="$case_dir/user-home" FM_SPAWN_NO_GUARD=1 \
     FM_FAKE_PANE_PATH="$case_dir/wt" TMUX="fake,1,0" CLAUDE_CONFIG_DIR='' \
     FM_TASKS_AXI_TIMEOUT=3 PATH="$case_dir/fakebin:$PATH" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$case_dir/agentlab-fixture/src" \
     timeout -k 5 30 "$SPAWN" "$id" "$case_dir/project" \
     --mode no-mistakes --yolo off 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "an interrupted spawn reported success"
@@ -2775,9 +2784,11 @@ test_spawn_refuses_a_special_file_tasks_config() {
   rm -f "$home/.tasks.toml"
   mkfifo "$home/.tasks.toml"
 
+  fm_test_preservation_satisfy "$home/state" "$id" "$case_dir/agentlab-fixture" initial
   out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$case_dir/wt" TMUX="fake,1,0" \
     CLAUDE_CONFIG_DIR='' \
+    FM_PRESERVATION_AGENTLAB_ROOT="$case_dir/agentlab-fixture/src" \
     PATH="$case_dir/fakebin:$PATH" \
     timeout 60 "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off 2>&1) || rc=$?
   [ "$rc" -ne 124 ] || fail "spawn hung reading a special-file tasks-axi config"

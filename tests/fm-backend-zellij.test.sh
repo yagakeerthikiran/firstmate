@@ -899,9 +899,12 @@ test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag() {
   zellij_tab_response "$dir" 2 4 "$child_title"
   printf '[]\n' > "$dir/responses/3.out"
   fb=$(make_zellij_fakebin "$dir")
+  fm_test_preservation_satisfy "$state" smz "$dir/agentlab-fixture" final \
+    "0000000000000000000000000000000000000000"
   out=$( PATH="$fb:$PATH" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
     FM_ROOT_OVERRIDE="$ROOT" \
     FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST="firstmate" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
     "$ROOT/bin/fm-teardown.sh" smz --force 2>&1 )
   status=$?
   expect_code 0 "$status" "fm-teardown should force-retire a secondmate with a zellij child: $out"
