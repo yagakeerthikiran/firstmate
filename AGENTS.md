@@ -388,6 +388,7 @@ For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports
 Run `bin/fm-pr-check.sh <id> <PR url>` with the URL copied from that ready signal - it records `pr=` and the forge's `pr_head=` when available in the task's meta and arms the watcher's merge poll.
 Tell the captain the PR's full `https://...` URL copied from the worker's ready line or the task's `pr=` metadata, a concise outcome summary, and the no-mistakes risk level when applicable.
 A captain instruction to merge is explicit authority; `yolo` is the only standing routine merge authority.
+`bin/fm-pr-merge.sh` also refuses a merge without a verified final preservation receipt and, for a GitHub PR, a canonical AgentLab manifest pinned to the live head with `preservation_status: complete` (`bin/fm-preservation-manifest.sh`; `docs/evidence-preservation-lifecycle.md` in `yagakeerthikiran/agentlab-shared-memory` is the canonical contract); only `--preservation-waived-by-captain "<verbatim words>"` bypasses it, the same flag semantics as the teardown gate below.
 For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary single-link mode-`0700` file, print one line only when firstmate should wake, print nothing otherwise, finish before `FM_CHECK_TIMEOUT`, then bind its current bytes with `bin/fm-check-register.sh <id>` before the watcher may execute it.
 Retire a custom check only through `bin/fm-check-unregister.sh <id>` (or `bin/fm-teardown.sh` for a spawned task); never hand-compose an `rm` with `$STATE`/`$ID`.
 
@@ -505,6 +506,7 @@ Reach the captain immediately for:
 - Anything destructive, irreversible, or security-sensitive.
 - A needed credential or login.
 
+Render a task's final captain packet with `bin/fm-captain-packet.sh <task-id>`, which refuses to render at all without a verified final AgentLab preservation receipt rather than reporting completeness it cannot prove.
 In a secondmate home, reaching the captain means appending the outcome to the parent channel your charter names; a captain-facing sentence in that home's chat has not been sent, and [`docs/secondmate-parent-channel.md`](docs/secondmate-parent-channel.md) owns which outcomes the home's own scripts deliver there without you.
 Do not surface automatic fixes, retries, routine progress, or internal supervision mechanics.
 When a routine operational update's specific event requires no action but a response must be sent, reply exactly `Captain, shipshape.` without characterizing the visible session's unrelated decisions.
