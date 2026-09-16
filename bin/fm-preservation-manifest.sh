@@ -18,7 +18,10 @@
 #
 # <task-id> must have a verified `final` preservation receipt on record
 # already (bin/fm-preservation-lib.sh's fm_preservation_verify; publish one
-# with the AgentLab publisher and bin/fm-preservation-record.sh first).
+# with the AgentLab publisher and bin/fm-preservation-record.sh first), and
+# that receipt's own app_head must equal the live PR head reported by `gh`;
+# a receipt recorded against an earlier head refuses rather than pinning a
+# manifest to evidence the current head has already moved past.
 #
 # The five DriveLog manifest categories are requirements, decisions,
 # test_evidence, branch_recovery and final_handoff. This script auto-detects
@@ -298,6 +301,8 @@ else
   RESUME_REF=$(fm_meta_get "$META" resume_url 2>/dev/null || true)
   if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = UNAVAILABLE ]; then
     if [ -n "$WORKTREE" ] && [ -d "$WORKTREE" ]; then
+      # -u: this process's own CLAUDE_CODE_SESSION_ID (firstmate's session, not
+      # the crew's) would otherwise shadow the worktree argument below.
       SESSION_OUT=$(env -u CLAUDE_CODE_SESSION_ID "$SCRIPT_DIR/fm-session-id.sh" "$WORKTREE" 2>/dev/null) || SESSION_OUT=""
       SESSION_ID=$(printf '%s\n' "$SESSION_OUT" | sed -n 's/^session_id=//p')
       RESUME_REF=$(printf '%s\n' "$SESSION_OUT" | sed -n 's/^resume_url=//p')

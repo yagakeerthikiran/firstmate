@@ -205,6 +205,36 @@ test_manifest_refuses_without_crew_identity() {
   esac
 }
 
+# run_manifest always sets CLAUDE_CODE_SESSION_ID=...-0000fm on the generator's
+# own process, standing in for the supervising FirstMate's own live session.
+# When a task's meta records a worktree but no session_id, the generator must
+# resolve the CREW's identity by scanning that worktree's own transcript
+# (fm-session-id.sh <worktree>), not by reusing the generator's own env var --
+# otherwise every crew member would be misattributed as the supervising
+# FirstMate. The fixture worktree here has no matching transcript directory,
+# so a correct resolution must fail and the generator must refuse; a leaked
+# env var would instead let it wrongly succeed with the FirstMate's own id.
+test_manifest_crew_identity_worktree_fallback_ignores_generators_own_session_id() {
+  local dir out
+  dir="$TMP_ROOT/crew-identity-worktree-fallback"
+  build_manifest_fixture "$dir" home1 task1
+  local sha
+  sha=$(git -C "$dir/src" rev-parse HEAD)
+  mkdir -p "$dir/state" "$dir/wt"
+  fm_write_meta "$dir/state/task1.meta" "kind=ship" "mode=no-mistakes" "yolo=off" "worktree=$dir/wt"
+  write_receipt "$dir/state" task1 initial home1 "checkpoints/home1/task1/001--fixture--initial.md" "$sha"
+  write_receipt "$dir/state" task1 final home1 "checkpoints/home1/task1/003--fixture--final.md" "$sha" "$DEFAULT_PR_HEAD"
+  out=$(run_manifest "$dir" task1 --requirement-id R-1 --decision-id D-01 \
+    --artifact "test_evidence=artifacts/home1/task1/test-evidence.md")
+  case "$out" in
+    *"00000000-0000-0000-0000-0000000000fm"*)
+      fail "manifest generator leaked its own CLAUDE_CODE_SESSION_ID into a different worktree's crew identity: $out" ;;
+    *"crew session_id could not be resolved"*)
+      pass "manifest generator resolves crew identity from the worktree's own transcript instead of the generator's own CLAUDE_CODE_SESSION_ID" ;;
+    *) fail "expected a crew-identity refusal (the fixture worktree has no matching transcript), got: $out" ;;
+  esac
+}
+
 # seed_case_with_crew_identity <case_dir> <home> <task>: seed_case plus a
 # recorded crew session_id/resume_url in state/<id>.meta, for cases that
 # exercise the success path rather than the crew-identity refusal itself.
@@ -405,6 +435,7 @@ test_manifest_refuses_without_test_evidence
 test_manifest_refuses_without_requirement_id
 test_manifest_refuses_without_update_checkpoint
 test_manifest_refuses_without_crew_identity
+test_manifest_crew_identity_worktree_fallback_ignores_generators_own_session_id
 test_manifest_no_crew_flag_records_reason
 test_manifest_succeeds_end_to_end
 test_manifest_rerun_after_new_head_updates_in_place
@@ -602,6 +633,14 @@ test_stow_preservation_publishes_for_task_and_firstmate_home() {
     "the task checkpoint did not carry its own worktree's real head SHA"
   assert_no_grep 'TODO' "$dir/src/checkpoints/task-home/task1/001--stub--update.md" \
     "the task checkpoint left an unfilled TODO placeholder"
+  # The stow pass ran with CLAUDE_CODE_SESSION_ID=...-0000aa set on its own
+  # process (standing in for the primary FirstMate session), but the task
+  # checkpoint's identity must come from THIS task's own worktree, not from
+  # that env var leaking through fm-session-id.sh; the fixture worktree has
+  # no matching transcript, so a correct resolution reports UNAVAILABLE.
+  assert_no_grep '00000000-0000-0000-0000-0000000000aa' \
+    "$dir/src/checkpoints/task-home/task1/001--stub--update.md" \
+    "the task checkpoint leaked the stow pass's own CLAUDE_CODE_SESSION_ID instead of resolving the task worktree's own identity"
 }
 
 test_stow_preservation_refuses_without_the_agentlab_scripts

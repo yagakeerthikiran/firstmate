@@ -136,6 +136,14 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-parent-channel-lib.sh` | Resolve a secondmate home's parent channel and append a captain-facing outcome line to it at most once |
 | `fm-promote.sh`          | Promote a scout task in place to a protected ship task with an explicit delivery mode, and write the ship instructions carrying that mode's definition of done |
 | `fm-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed scout deliverables, retire secondmate homes |
+| `fm-preservation-lib.sh` | Own the durable per-task AgentLab receipt log and `fm_preservation_verify`, the gate spawn, promote, teardown, and merge all call |
+| `fm-preservation-record.sh` | Ingest a published `CHECKPOINT_RECEIPT=<json>` line into a task's durable preservation receipt log |
+| `fm-preservation-staleness-lib.sh` | Network-free advisory scan flagging a task whose newest local preservation receipt looks stale against its own current work |
+| `fm-preservation-manifest.sh` | Generate and push the canonical AgentLab PR-manifest a merge's preservation gate requires |
+| `fm-preservation-manifest-validate.mjs` | Vendored DriveLog manifest-schema validator backing `fm-preservation-manifest.sh` |
+| `fm-stow-preservation.sh` | Publish a mechanical AgentLab "update" checkpoint for every in-flight task and the firstmate home, then record each receipt |
+| `fm-captain-packet.sh`   | Render a task's final captain packet from durable records, refusing without a verified final preservation receipt |
+| `fm-session-id.sh`       | Resolve a home's Claude Code session ID and resume URL for preservation identity blocks |
 | `fm-harness.sh`          | Detect the running harness, resolve crew or secondmate harness, model, and effort, and validate the native-only `ultra` effort |
 | `fm-lock.sh`             | Per-home firstmate session lock                                                      |
 | `fm-x-lib.sh`            | Shared Relay config, relay, and reply-threading helpers                              |

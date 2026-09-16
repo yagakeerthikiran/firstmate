@@ -123,6 +123,8 @@ publish_one() {
   local tmp_out rc receipt_line
 
   if [ -n "$worktree" ] && [ -d "$worktree" ]; then
+    # -u: this process's own CLAUDE_CODE_SESSION_ID (firstmate's session, not
+    # this task's) would otherwise shadow the worktree argument below.
     session_out=$(env -u CLAUDE_CODE_SESSION_ID "$SCRIPT_DIR/fm-session-id.sh" "$worktree" 2>/dev/null) || session_out=""
   else
     session_out=$("$SCRIPT_DIR/fm-session-id.sh" "$FM_HOME" 2>/dev/null) || session_out=""
