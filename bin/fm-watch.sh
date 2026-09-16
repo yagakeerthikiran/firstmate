@@ -173,6 +173,8 @@ mkdir -p "$STATE"
 # watcher reads only its presence (afk_record_present below).
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+# shellcheck source=bin/fm-preservation-staleness-lib.sh
+. "$SCRIPT_DIR/fm-preservation-staleness-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -2477,6 +2479,24 @@ EOF
       echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak"
       triage_log "absorbed heartbeat (no captain-relevant change)"
     fi
+  fi
+
+  # AgentLab evidence-preservation staleness scan
+  # (bin/fm-preservation-staleness-lib.sh; docs/evidence-preservation-lifecycle.md
+  # in yagakeerthikiran/agentlab-shared-memory is the canonical contract). Runs
+  # at its own HEARTBEAT-based cadence, independent of the heartbeat-streak
+  # backoff above, since a stale checkpoint is a captain-relevant fact on its
+  # own schedule rather than contingent on the fleet otherwise being "quiet".
+  # Network-free (local receipt log, git, and mtime reads only); this is an
+  # advisory heads-up, not the authoritative gate a spawn/promote/teardown/merge
+  # call actually enforces.
+  if [ "$(age_of "$STATE/.last-preservation-scan")" -ge "$HEARTBEAT" ]; then
+    touch "$STATE/.last-preservation-scan"
+    while IFS= read -r preservation_stale_id; do
+      [ -n "$preservation_stale_id" ] || continue
+      fm_wake_append check "preservation-stale:$preservation_stale_id" \
+        "check: preservation-stale $preservation_stale_id: newest AgentLab checkpoint receipt is missing or older than the current branch head (or report) by more than the configured grace window" || true
+    done < <(fm_preservation_stale_tasks "$STATE")
   fi
 
   # Terminal wait: a bounded native-event wait for push-capable homes (herdr),

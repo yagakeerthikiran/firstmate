@@ -1200,6 +1200,34 @@ esac
 # Reached only after the forge confirmed the merge landed: set -e exits on a
 # refused or failed merge above, and a queued forge merge exits without an
 # outcome while its existing poll remains armed.
+
+# AgentLab evidence-preservation "merged" receipt (docs/evidence-preservation-lifecycle.md
+# in yagakeerthikiran/agentlab-shared-memory is the canonical contract), read by
+# bin/fm-captain-packet.sh. Best-effort and after the fact: a merge that already
+# landed is never undone by a failure recording this. base_head_after_merge is
+# read live from the base branch and is UNAVAILABLE when that read fails or the
+# provider/base is not resolvable (GitLab base tracking is not wired here yet).
+if [ -z "$PRESERVATION_WAIVER" ]; then
+  MERGE_RECEIPT_BASE_HEAD=UNAVAILABLE
+  if [ "$PROVIDER" = github ] && [ -n "${FM_PR_GITHUB_BASE:-}" ]; then
+    if MERGE_RECEIPT_BASE_HEAD_LINE=$(git ls-remote "https://github.com/$PR_OWNER/$PR_REPO" "refs/heads/$FM_PR_GITHUB_BASE" 2>/dev/null) \
+      && [ -n "$MERGE_RECEIPT_BASE_HEAD_LINE" ]; then
+      MERGE_RECEIPT_BASE_HEAD=${MERGE_RECEIPT_BASE_HEAD_LINE%%$'\t'*}
+    fi
+  fi
+  MERGED_RECEIPT_JSON=$(node -e '
+    process.stdout.write(JSON.stringify({
+      kind: "merged",
+      task: process.argv[1],
+      pr_url: process.argv[2],
+      merge_commit: process.argv[3],
+      base_head_after_merge: process.argv[4],
+      recorded_at: new Date().toISOString(),
+    }));
+  ' "$ID" "$URL" "$FM_PR_MERGE_HEAD" "$MERGE_RECEIPT_BASE_HEAD")
+  fm_preservation_append_line "$STATE" "$ID" "$MERGED_RECEIPT_JSON" || true
+fi
+
 outcome_rc=0
 fm_merge_outcome_report "$FM_HOME" "$STATE" "$ID" "$URL" self \
   "${FM_PR_MERGE_AUTHORITY:-}" || outcome_rc=$?

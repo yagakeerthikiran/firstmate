@@ -336,6 +336,55 @@ test_validator_accepts_a_complete_manifest() {
   pass "vendored validator accepts a schema-complete manifest"
 }
 
+# --- bin/fm-captain-packet.sh ------------------------------------------------
+
+CAPTAIN_PACKET="$ROOT/bin/fm-captain-packet.sh"
+
+run_captain_packet() {
+  local case_dir=$1 task=$2
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$case_dir/src" \
+    "$CAPTAIN_PACKET" "$task" 2>&1
+}
+
+test_captain_packet_refuses_without_final_receipt() {
+  local dir out
+  dir="$TMP_ROOT/packet-no-receipt"
+  build_manifest_fixture "$dir" home1 task1
+  mkdir -p "$dir/state"
+  fm_write_meta "$dir/state/task1.meta" "kind=ship"
+  out=$(run_captain_packet "$dir" task1)
+  case "$out" in
+    *"cannot render a captain packet"*"REFUSED: preservation final"*) pass "captain packet refuses to render without a verified final receipt" ;;
+    *) fail "expected a final-receipt refusal, got: $out" ;;
+  esac
+}
+
+test_captain_packet_renders_from_durable_records() {
+  local dir sha out
+  dir="$TMP_ROOT/packet-success"
+  sha=$(seed_case "$dir" home1 task1)
+  fm_write_meta "$dir/state/task1.meta" "kind=ship" "pr=https://github.com/acme/widgets/pull/42" "pr_head=$sha"
+  node -e '
+    const fs = require("node:fs");
+    const [p, id, commit] = process.argv.slice(1);
+    fs.appendFileSync(p, JSON.stringify({
+      kind: "merged", task: id, pr_url: "https://github.com/acme/widgets/pull/42",
+      merge_commit: commit, base_head_after_merge: "deadbeef", recorded_at: new Date().toISOString(),
+    }) + "\n");
+  ' "$dir/state/task1.preservation" task1 "$sha"
+  out=$(run_captain_packet "$dir" task1)
+  assert_contains "$out" "PR: https://github.com/acme/widgets/pull/42" "captain packet reports the recorded PR"
+  assert_contains "$out" "Merge commit: $sha" "captain packet reports the recorded merge commit"
+  assert_contains "$out" "Base head after merge: deadbeef" "captain packet reports the recorded base head after merge"
+  assert_contains "$out" "Final AgentLab checkpoint commit: $sha" "captain packet reports the final checkpoint commit"
+  assert_contains "$out" "AgentLab preservation manifest: UNAVAILABLE (no manifest committed" "captain packet names the missing manifest rather than fabricating one"
+  pass "captain packet renders every resolvable field from durable records and marks the rest UNAVAILABLE"
+}
+
+test_captain_packet_refuses_without_final_receipt
+test_captain_packet_renders_from_durable_records
+
 test_manifest_refuses_without_final_receipt
 test_manifest_refuses_without_test_evidence
 test_manifest_refuses_without_requirement_id
@@ -346,4 +395,201 @@ test_manifest_succeeds_end_to_end
 test_manifest_rerun_after_new_head_updates_in_place
 test_validator_rejects_missing_category
 test_validator_accepts_a_complete_manifest
+
+# --- bin/fm-stow-preservation.sh --------------------------------------------
+# tests/fm-preservation-gate.test.sh's build_gate_fixture stubs
+# validate-checkpoint.mjs only; this suite additionally stubs
+# checkpoint-template.sh and publish-firstmate-checkpoint.sh with the same CLI
+# contract the real scripts document (docs/evidence-preservation-lifecycle.md),
+# per the sibling brief's own authorized pattern for a not-yet-landed script.
+
+STOW_PRESERVATION="$ROOT/bin/fm-stow-preservation.sh"
+
+# build_stow_fixture <dir>: a real AgentLab-shaped repo at <dir>/src with a
+# bare origin, stub scripts/checkpoint-template.sh (prints the real "update"
+# kind structure verbatim) and scripts/publish-firstmate-checkpoint.sh (copies
+# the filled checkpoint into checkpoints/<home>/<task>/, commits, pushes, and
+# prints CHECKPOINT_COMMIT=/CHECKPOINT_PATH=/CHECKPOINT_RECEIPT=, mirroring the
+# real publisher's documented output contract without its artifact/redaction
+# machinery, which this suite does not exercise).
+build_stow_fixture() {
+  local dir=$1
+  mkdir -p "$dir/src/scripts"
+  git init -q -b main "$dir/src"
+  git -C "$dir/src" config user.email t@t
+  git -C "$dir/src" config user.name t
+  cat > "$dir/src/scripts/checkpoint-template.sh" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+[ "${1:-}" = update ] || { echo "usage: checkpoint-template.sh update" >&2; exit 2; }
+cat <<'TPL'
+# AgentLab update checkpoint
+
+## Session identification
+
+```text
+FirstMate model:
+FirstMate Claude session ID:
+FirstMate resume URL:
+Initial session start:
+Checkpoint timestamp:
+Application repository:
+AgentLab report commit:
+Current application branch:
+Current application head SHA:
+Associated PRs:
+```
+
+## Branch recovery record
+
+- Repository:
+- Base branch:
+- Working branch:
+- Base SHA:
+- Current head SHA:
+- Merge base:
+- Associated PR number and URL:
+- Clean/dirty status:
+- Changed-file inventory:
+- Untracked-file inventory:
+- Worktree path (historical context, non-durable):
+- Commit list introduced by the branch:
+- Files created, changed, deleted or intentionally left local:
+- Current CI/check status:
+- Deployment state:
+- Database/migration state:
+- Known divergence or rebase requirements:
+- Exact safe continuation command or procedure:
+- Artifacts belonging to this branch:
+- Local-only artifacts already copied into AgentLab:
+
+## 1. Previously approved state
+
+TODO
+
+## 2. New information
+
+TODO
+
+## 3. Superseded decision or requirement
+
+TODO
+
+## 4. Current authoritative decision
+
+TODO
+
+## 5. Remaining uncertainty
+
+TODO
+
+## 6. Exact files/artifacts added or updated
+
+TODO
+
+## Decision ledger references
+
+<!-- filler comment -->
+
+TODO
+
+## State line
+
+<!-- filler comment -->
+
+TODO
+TPL
+EOF
+  chmod +x "$dir/src/scripts/checkpoint-template.sh"
+  cat > "$dir/src/scripts/publish-firstmate-checkpoint.sh" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+HOME_NAME= TASK_ID= KIND= SOURCE=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --home) HOME_NAME=$2; shift 2 ;;
+    --task) TASK_ID=$2; shift 2 ;;
+    --kind) KIND=$2; shift 2 ;;
+    --source) SOURCE=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+CKPT_DIR="checkpoints/$HOME_NAME/$TASK_ID"
+mkdir -p "$CKPT_DIR"
+N=$(find "$CKPT_DIR" -maxdepth 1 -name '[0-9][0-9][0-9]--*.md' 2>/dev/null | wc -l | tr -d ' ')
+N=$(printf '%03d' "$((N + 1))")
+DEST="$CKPT_DIR/${N}--stub--${KIND}.md"
+cp "$SOURCE" "$DEST"
+git add "$DEST"
+git -c user.email=t@t -c user.name=t commit -q -m "stub checkpoint $HOME_NAME/$TASK_ID $N $KIND"
+SHA=$(git rev-parse HEAD)
+git push -q origin main
+echo "CHECKPOINT_COMMIT=$SHA"
+echo "CHECKPOINT_PATH=$DEST"
+echo "CHECKPOINT_RECEIPT={\"kind\":\"$KIND\",\"task\":\"$TASK_ID\",\"commit\":\"$SHA\",\"path\":\"$DEST\",\"app_head\":\"\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+EOF
+  chmod +x "$dir/src/scripts/publish-firstmate-checkpoint.sh"
+  git -C "$dir/src" add -A
+  git -C "$dir/src" commit -q -m fixture
+  git init -q --bare "$dir/origin.git"
+  git -C "$dir/src" remote add origin "$dir/origin.git"
+  git -C "$dir/src" push -q origin main
+}
+
+test_stow_preservation_refuses_without_the_agentlab_scripts() {
+  local dir out
+  dir="$TMP_ROOT/stow-no-scripts"
+  mkdir -p "$dir/src" "$dir/state"
+  git init -q -b main "$dir/src"
+  git -C "$dir/src" config user.email t@t
+  git -C "$dir/src" config user.name t
+  git -C "$dir/src" commit -q -m fixture --allow-empty
+  out_rc=0
+  out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$dir/src" "$STOW_PRESERVATION" 2>&1) || out_rc=$?
+  [ "$out_rc" -ne 0 ] || fail "stow preservation should refuse without the AgentLab checkpoint scripts"
+  case "$out" in
+    *"REFUSED: preservation stow pass requires"*) pass "fm-stow-preservation.sh refuses when the AgentLab checkpoint scripts are absent" ;;
+    *) fail "stow preservation refusal did not name the missing script, got: $out" ;;
+  esac
+}
+
+test_stow_preservation_publishes_for_task_and_firstmate_home() {
+  local dir out
+  dir="$TMP_ROOT/stow-success"
+  build_stow_fixture "$dir"
+  mkdir -p "$dir/state" "$dir/wt"
+  git init -q -b main "$dir/wt"
+  git -C "$dir/wt" config user.email t@t
+  git -C "$dir/wt" config user.name t
+  printf 'hello\n' > "$dir/wt/f.txt"
+  git -C "$dir/wt" add -A
+  git -C "$dir/wt" commit -q -m "task work"
+  fm_write_meta "$dir/state/task1.meta" "kind=ship" "worktree=$dir/wt" "home=task-home"
+
+  out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$dir/src" CLAUDE_CODE_SESSION_ID="00000000-0000-0000-0000-0000000000aa" \
+    "$STOW_PRESERVATION" 2>&1)
+  case "$out" in
+    *"published: update checkpoint for task-home/task1"*"published: update checkpoint for firstmate-home/main"*"preservation stow pass published 2 checkpoint(s)"*)
+      pass "fm-stow-preservation.sh publishes an update checkpoint for the in-flight task and the firstmate home" ;;
+    *) fail "expected two published checkpoints, got: $out" ;;
+  esac
+  git -C "$dir/src" cat-file -e "HEAD:checkpoints/task-home/task1/001--stub--update.md" \
+    || fail "task checkpoint was not committed to the AgentLab clone"
+  git -C "$dir/src" cat-file -e "HEAD:checkpoints/firstmate-home/main/001--stub--update.md" \
+    || fail "firstmate-home checkpoint was not committed to the AgentLab clone"
+  assert_grep '"kind":"update"' "$dir/state/task1.preservation" \
+    "the task's own receipt log was not updated by the stow pass"
+  local task_ckpt
+  task_ckpt=$(git -C "$dir/src" show "HEAD:checkpoints/task-home/task1/001--stub--update.md")
+  assert_contains "$task_ckpt" "Current head SHA: $(git -C "$dir/wt" rev-parse HEAD)" \
+    "the task checkpoint did not carry its own worktree's real head SHA"
+  assert_no_grep 'TODO' "$dir/src/checkpoints/task-home/task1/001--stub--update.md" \
+    "the task checkpoint left an unfilled TODO placeholder"
+}
+
+test_stow_preservation_refuses_without_the_agentlab_scripts
+test_stow_preservation_publishes_for_task_and_firstmate_home
+
 echo "# all fm-preservation-lifecycle-integration tests passed"

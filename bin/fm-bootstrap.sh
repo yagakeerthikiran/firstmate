@@ -191,6 +191,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 # deferred network stage sets, so an ordinary bootstrap run records nothing.
 # shellcheck source=bin/fm-timing-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-timing-lib.sh"
+# shellcheck source=bin/fm-preservation-staleness-lib.sh disable=SC1091
+. "$SCRIPT_DIR/fm-preservation-staleness-lib.sh"
 
 # Network-phase selection (see the header). An unrecognized value resolves to
 # `all` so a malformed override runs every step rather than silently dropping a
@@ -1505,6 +1507,21 @@ detect_local_config() {
   fi
   detect_code_root_backlog_fork
   detect_home_summary_publication
+  detect_preservation_staleness
+}
+
+# AgentLab evidence-preservation staleness (bin/fm-preservation-staleness-lib.sh;
+# docs/evidence-preservation-lifecycle.md in yagakeerthikiran/agentlab-shared-memory
+# is the canonical contract). Network-free: counts in-flight ship/scout tasks
+# whose newest local receipt is missing or older than the configured grace
+# relative to their own current work, so non-compliance surfaces at every
+# session start rather than only when a spawn/promote/teardown/merge refuses.
+detect_preservation_staleness() {
+  local count
+  count=$(fm_preservation_stale_tasks "$STATE" | wc -l | tr -d '[:space:]')
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  [ "$count" -gt 0 ] || return 0
+  echo "PRESERVATION: $count in-flight tasks without a current receipt"
 }
 
 # Shadow-backlog check. When this home's data directory is not the code root's,
