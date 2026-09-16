@@ -80,6 +80,13 @@ write_receipt() {
   ' "$state_dir/$id.preservation" "$id" "$kind" "$home" "$path" "$commit" "$app_head"
 }
 
+# DEFAULT_PR_HEAD is the headRefOid FAKE_GH_JSON reports by default; seed_case's
+# final receipt carries it as app_head so the manifest generator's live-head
+# freshness check (fm-preservation-manifest.sh comparing the final receipt's
+# app_head to the live PR head) passes for cases that seed a case and never
+# themselves change the PR head.
+DEFAULT_PR_HEAD="111111111111111111111111111111111111abcd"
+
 # seed_case <case_dir> <home> <task>: builds the fixture, a task meta file,
 # and initial/final receipts (but not the manifest itself). Echoes the fixture
 # commit SHA.
@@ -90,11 +97,11 @@ seed_case() {
   mkdir -p "$case_dir/state"
   fm_write_meta "$case_dir/state/$task.meta" "kind=ship" "mode=no-mistakes" "yolo=off"
   write_receipt "$case_dir/state" "$task" initial "$home" "checkpoints/$home/$task/001--fixture--initial.md" "$sha"
-  write_receipt "$case_dir/state" "$task" final "$home" "checkpoints/$home/$task/003--fixture--final.md" "$sha"
+  write_receipt "$case_dir/state" "$task" final "$home" "checkpoints/$home/$task/003--fixture--final.md" "$sha" "$DEFAULT_PR_HEAD"
   printf '%s\n' "$sha"
 }
 
-FAKE_GH_JSON='{"number":42,"baseRefName":"main","headRefOid":"111111111111111111111111111111111111abcd","body":""}'
+FAKE_GH_JSON="{\"number\":42,\"baseRefName\":\"main\",\"headRefOid\":\"$DEFAULT_PR_HEAD\",\"body\":\"\"}"
 
 # run_manifest <case_dir> [extra fm-preservation-manifest.sh args...]
 run_manifest() {
@@ -175,7 +182,7 @@ test_manifest_refuses_without_update_checkpoint() {
   mkdir -p "$dir/state"
   fm_write_meta "$dir/state/task1.meta" "kind=ship"
   write_receipt "$dir/state" task1 initial home1 "checkpoints/home1/task1/001--fixture--initial.md" "$sha"
-  write_receipt "$dir/state" task1 final home1 "checkpoints/home1/task1/002--fixture--final.md" "$sha"
+  write_receipt "$dir/state" task1 final home1 "checkpoints/home1/task1/002--fixture--final.md" "$sha" "$DEFAULT_PR_HEAD"
   out=$(run_manifest "$dir" task1 --requirement-id R-1 --artifact "test_evidence=artifacts/home1/task1/test-evidence.md")
   case "$out" in
     *"no update checkpoint found"*) pass "manifest generator refuses without an update checkpoint for branch_recovery" ;;
@@ -262,17 +269,25 @@ test_manifest_succeeds_end_to_end() {
 }
 
 test_manifest_rerun_after_new_head_updates_in_place() {
-  local dir out1 out2 manifest_json
+  local dir out1 out2 out3 manifest_json sha
   dir="$TMP_ROOT/rerun"
   seed_case_with_crew_identity "$dir" home1 task1
+  sha=$(git -C "$dir/src" rev-parse HEAD)
   out1=$(run_manifest "$dir" task1 --requirement-id R-1 --artifact "test_evidence=artifacts/home1/task1/test-evidence.md")
   case "$out1" in *"MANIFEST_COMMIT="*) ;; *) fail "first manifest run failed: $out1" ;; esac
   FAKE_GH_JSON='{"number":42,"baseRefName":"main","headRefOid":"222222222222222222222222222222222222abcd","body":""}'
   out2=$(run_manifest "$dir" task1 --requirement-id R-1 --artifact "test_evidence=artifacts/home1/task1/test-evidence.md")
-  case "$out2" in *"MANIFEST_COMMIT="*) ;; *) fail "second manifest run failed: $out2" ;; esac
+  case "$out2" in
+    *"is stale"*) pass "manifest generator refuses to pin a new PR head without a matching final checkpoint" ;;
+    *) fail "expected a staleness refusal when the PR head moved past the recorded final checkpoint, got: $out2" ;;
+  esac
+  write_receipt "$dir/state" task1 final home1 "checkpoints/home1/task1/003--fixture--final.md" "$sha" \
+    "222222222222222222222222222222222222abcd"
+  out3=$(run_manifest "$dir" task1 --requirement-id R-1 --artifact "test_evidence=artifacts/home1/task1/test-evidence.md")
+  case "$out3" in *"MANIFEST_COMMIT="*) ;; *) fail "second manifest run failed: $out3" ;; esac
   manifest_json=$(git -C "$dir/src" show HEAD:manifests/acme/widgets/pr-42.json)
   assert_contains "$manifest_json" '"application_head_sha": "222222222222222222222222222222222222abcd"' \
-    "re-running the manifest generator after a new PR head updates the same manifest path in place"
+    "re-running the manifest generator after a new PR head and a fresh final checkpoint updates the same manifest path in place"
   pass "manifest re-run after a PR head change updates the manifest in place"
 }
 

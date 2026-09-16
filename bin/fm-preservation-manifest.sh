@@ -177,6 +177,11 @@ fi
 FINAL_RECEIPT=$FM_PRESERVATION_VERIFY_RECEIPT
 FINAL_HOME=$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(o.home||"")' "$FINAL_RECEIPT")
 FINAL_PATH=$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(o.path||"")' "$FINAL_RECEIPT")
+FINAL_APP_HEAD=$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(o.app_head||"")' "$FINAL_RECEIPT")
+[ -n "$FINAL_APP_HEAD" ] && [ "$FINAL_APP_HEAD" = "$HEAD_SHA" ] || {
+  echo "error: final preservation checkpoint for task $ID is stale: its recorded app head '${FINAL_APP_HEAD:-<none>}' does not match the live PR head $HEAD_SHA; publish an updated final checkpoint before generating the manifest" >&2
+  exit 1
+}
 
 # --- initial receipt: mandatory for the requirements category --------------
 if ! fm_preservation_verify "$STATE" "$ID" initial; then
@@ -293,7 +298,7 @@ else
   RESUME_REF=$(fm_meta_get "$META" resume_url 2>/dev/null || true)
   if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = UNAVAILABLE ]; then
     if [ -n "$WORKTREE" ] && [ -d "$WORKTREE" ]; then
-      SESSION_OUT=$("$SCRIPT_DIR/fm-session-id.sh" "$WORKTREE" 2>/dev/null) || SESSION_OUT=""
+      SESSION_OUT=$(env -u CLAUDE_CODE_SESSION_ID "$SCRIPT_DIR/fm-session-id.sh" "$WORKTREE" 2>/dev/null) || SESSION_OUT=""
       SESSION_ID=$(printf '%s\n' "$SESSION_OUT" | sed -n 's/^session_id=//p')
       RESUME_REF=$(printf '%s\n' "$SESSION_OUT" | sed -n 's/^resume_url=//p')
     fi
