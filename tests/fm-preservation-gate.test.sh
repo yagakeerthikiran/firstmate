@@ -371,11 +371,11 @@ test_waiver_records_words_and_lets_verify_stay_refused() {
 
 # --- fm-teardown.sh integration ----------------------------------------------
 
-# make_teardown_case <name>: a real project + worktree + fork remote so the
-# task's own landed-work check passes, leaving the preservation gate as the
+# make_teardown_case <name> [<kind>]: a real project + worktree + fork remote so
+# the task's own landed-work check passes, leaving the preservation gate as the
 # only thing standing between teardown and success. Echoes "<case_dir>|<wt>".
 make_teardown_case() {
-  local name=$1 case_dir wt
+  local name=$1 kind=${2:-ship} case_dir wt
   case_dir="$TMP_ROOT/$name"
   mkdir -p "$case_dir/state" "$case_dir/data" "$case_dir/config" "$case_dir/fakebin"
   fm_test_fake_exit0 "$case_dir/fakebin" tmux treehouse no-mistakes gh gh-axi 2>/dev/null \
@@ -385,10 +385,32 @@ make_teardown_case() {
   fm_write_meta "$case_dir/state/task-x1.meta" \
     "window=firstmate:fm-task-x1" "endpoint_task_id=task-x1" \
     "worktree=$wt" "project=$case_dir/project" \
-    "kind=ship" "mode=local-only" "spawn_gen=preservation-gate-fixture"
+    "kind=$kind" "mode=local-only" "spawn_gen=preservation-gate-fixture"
   printf 'manual\n' > "$case_dir/config/backlog-backend"
   touch "$case_dir/state/.last-watcher-beat"
   printf '%s\n' "$case_dir|$wt"
+}
+
+# make_secondmate_teardown_case <name>: a secondmate task registered on a
+# parent home, with its own (childless) secondmate home, so the preservation
+# gate is the only thing standing between teardown and success. Echoes
+# "<case_dir>|<smhome>".
+make_secondmate_teardown_case() {
+  local name=$1 case_dir smhome
+  case_dir="$TMP_ROOT/$name"
+  smhome="$case_dir/smhome"
+  mkdir -p "$case_dir/state" "$case_dir/data" "$case_dir/config" "$case_dir/fakebin"
+  fm_test_fake_exit0 "$case_dir/fakebin" tmux treehouse no-mistakes gh gh-axi 2>/dev/null \
+    || fm_fake_exit0 "$case_dir/fakebin" tmux treehouse no-mistakes gh gh-axi
+  fm_git_init_commit "$smhome"
+  mkdir -p "$smhome/state" "$smhome/data"
+  printf 'task-x1\n' > "$smhome/.fm-secondmate-home"
+  fm_write_secondmate_meta "$case_dir/state/task-x1.meta" "$smhome"
+  printf '%s\n' "- task-x1 - fixture scope (home: $smhome; scope: fixture; projects: alpha; added 2026-07-14)" \
+    > "$case_dir/data/secondmates.md"
+  printf 'manual\n' > "$case_dir/config/backlog-backend"
+  touch "$case_dir/state/.last-watcher-beat"
+  printf '%s\n' "$case_dir|$smhome"
 }
 
 run_gate_teardown() {  # <case_dir> [extra args...]
@@ -456,6 +478,99 @@ EOF
   assert_grep 'captain says ship without a checkpoint this once' "$case_dir/state/task-x1.preservation" \
     "the waiver did not record the captain's verbatim words"
   pass "--preservation-waived-by-captain records an auditable waiver and proceeds"
+}
+
+# --- fm-teardown.sh integration: per-kind wiring for scout and secondmate ---
+#
+# The tests above only ever exercise kind=ship through the real CLI; the
+# scout and secondmate staleness rules in fm_preservation_verify (asserted
+# directly against the library above) are wired into bin/fm-teardown.sh via
+# its own $KIND variable (see fm-teardown.sh's `fm_preservation_verify "$STATE"
+# "$ID" final "$WT" "$KIND"` call). A regression that dropped or mis-threaded
+# that argument for scout/secondmate would go unnoticed by a ship-only CLI
+# test, so these run the same fresh/stale matrix through fm-teardown.sh
+# itself rather than by calling the library function directly.
+
+test_teardown_scout_refuses_a_stale_final_receipt_via_cli() {
+  local rec case_dir wt agentlab sha out status
+  rec=$(make_teardown_case teardown-scout-stale scout)
+  IFS='|' read -r case_dir wt <<EOF
+$rec
+EOF
+  agentlab="$case_dir/agentlab"
+  build_gate_fixture "$agentlab"
+  sha=$(commit_checkpoint "$agentlab" "scout final for teardown")
+  mkdir -p "$case_dir/data/task-x1"
+  printf 'report\n' > "$case_dir/data/task-x1/report.md"
+  fm_touch_epoch 1700000000 "$case_dir/data/task-x1/report.md"
+  write_receipt "$case_dir/state" task-x1 final "$sha" "" "2020-01-01T00:00:00Z"
+  out=$(FM_HOME="$case_dir" FM_PRESERVATION_AGENTLAB_ROOT="$agentlab/src" run_gate_teardown "$case_dir" --force)
+  status=$?
+  [ "$status" -ne 0 ] || fail "teardown should refuse a scout final receipt whose report was edited after the checkpoint"
+  assert_contains "$out" "REFUSED: preservation" "the scout staleness refusal did not name the preservation gate"
+  assert_contains "$out" "is stale" "the scout refusal did not explain the report is newer than the receipt"
+  pass "teardown (kind=scout) refuses via the real CLI when the report postdates the final receipt"
+}
+
+test_teardown_scout_proceeds_with_a_fresh_final_receipt_via_cli() {
+  local rec case_dir wt agentlab sha out status
+  rec=$(make_teardown_case teardown-scout-fresh scout)
+  IFS='|' read -r case_dir wt <<EOF
+$rec
+EOF
+  agentlab="$case_dir/agentlab"
+  build_gate_fixture "$agentlab"
+  sha=$(commit_checkpoint "$agentlab" "scout final for teardown")
+  mkdir -p "$case_dir/data/task-x1"
+  printf 'report\n' > "$case_dir/data/task-x1/report.md"
+  fm_touch_epoch 1700000000 "$case_dir/data/task-x1/report.md"
+  write_receipt "$case_dir/state" task-x1 final "$sha" "" "2023-11-15T00:00:00Z"
+  out=$(FM_HOME="$case_dir" FM_PRESERVATION_AGENTLAB_ROOT="$agentlab/src" run_gate_teardown "$case_dir" --force)
+  status=$?
+  assert_not_contains "$out" "REFUSED: preservation" "a fresh scout final receipt was refused via the CLI: $out"
+  [ "$status" -eq 0 ] || fail "teardown (kind=scout) should succeed with a fresh final receipt (rc=$status): $out"
+  pass "teardown (kind=scout) proceeds via the real CLI once its report predates the final receipt"
+}
+
+test_teardown_secondmate_refuses_a_missing_app_head_via_cli() {
+  local rec case_dir smhome agentlab sha out status
+  rec=$(make_secondmate_teardown_case teardown-secondmate-no-head)
+  IFS='|' read -r case_dir smhome <<EOF
+$rec
+EOF
+  agentlab="$case_dir/agentlab"
+  build_gate_fixture "$agentlab"
+  sha=$(commit_checkpoint "$agentlab" "secondmate final for teardown")
+  write_receipt "$case_dir/state" task-x1 final "$sha" ""
+  out=$(FM_PRESERVATION_AGENTLAB_ROOT="$agentlab/src" run_gate_teardown "$case_dir")
+  status=$?
+  [ "$status" -ne 0 ] || fail "teardown should refuse a secondmate final receipt with no app_head"
+  assert_contains "$out" "REFUSED: preservation" "the secondmate missing-app_head refusal did not name the preservation gate"
+  assert_contains "$out" "missing app_head" "the secondmate refusal did not explain the missing app_head"
+  [ -d "$smhome" ] || fail "the secondmate home was removed despite the preservation refusal"
+  pass "teardown (kind=secondmate) refuses via the real CLI when the final receipt has no app_head"
+}
+
+test_teardown_secondmate_proceeds_with_a_matching_final_receipt_via_cli() {
+  local rec case_dir smhome agentlab sha head out status
+  rec=$(make_secondmate_teardown_case teardown-secondmate-fresh)
+  IFS='|' read -r case_dir smhome <<EOF
+$rec
+EOF
+  agentlab="$case_dir/agentlab"
+  build_gate_fixture "$agentlab"
+  sha=$(commit_checkpoint "$agentlab" "secondmate final for teardown")
+  printf 'backlog\n' > "$smhome/data/backlog.md"
+  printf 'captain\n' > "$smhome/data/captain.md"
+  fm_touch_epoch 1700000000 "$smhome/data/backlog.md" "$smhome/data/captain.md"
+  head=$(git -C "$smhome" rev-parse HEAD)
+  write_receipt "$case_dir/state" task-x1 final "$sha" "$head" "2023-11-15T00:00:00Z"
+  out=$(FM_PRESERVATION_AGENTLAB_ROOT="$agentlab/src" run_gate_teardown "$case_dir")
+  status=$?
+  assert_not_contains "$out" "REFUSED: preservation" "a matching secondmate final receipt was refused via the CLI: $out"
+  [ "$status" -eq 0 ] || fail "teardown (kind=secondmate) should succeed with a matching final receipt (rc=$status): $out"
+  [ ! -d "$smhome" ] || fail "teardown (kind=secondmate) did not remove the retired secondmate home"
+  pass "teardown (kind=secondmate) proceeds via the real CLI once its final receipt matches and predates its records"
 }
 
 # --- fm-spawn.sh integration --------------------------------------------------
@@ -678,6 +793,10 @@ test_teardown_refuses_without_a_final_receipt
 test_teardown_force_does_not_bypass_preservation
 test_teardown_proceeds_with_a_valid_final_receipt
 test_teardown_waiver_records_words_and_proceeds
+test_teardown_scout_refuses_a_stale_final_receipt_via_cli
+test_teardown_scout_proceeds_with_a_fresh_final_receipt_via_cli
+test_teardown_secondmate_refuses_a_missing_app_head_via_cli
+test_teardown_secondmate_proceeds_with_a_matching_final_receipt_via_cli
 test_spawn_ship_refuses_without_initial_receipt
 test_spawn_ship_proceeds_past_the_gate_with_a_valid_initial_receipt
 test_spawn_scout_is_exempt_from_the_initial_receipt
