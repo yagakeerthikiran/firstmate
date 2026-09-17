@@ -533,6 +533,8 @@ real_validator_write_checkpoint() {
   # whenever ITS OWN PATH is passed as a positional argv, regardless of how it
   # got imported. Pass everything through the environment instead, so
   # process.argv stays empty and that self-CLI branch never fires.
+  # shellcheck disable=SC2016 # single-quoted intentionally: this JS reads
+  # process.env, not shell variables, so nothing here should expand.
   CKPT_LIB_PATH="$dir/src/scripts/checkpoint-lib.mjs" \
   CKPT_RESOLVABLE_SHA="$resolvable_sha" \
   CKPT_BLANK_FIELD="$blank_field" \
