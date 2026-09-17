@@ -249,12 +249,14 @@ run_two_level() {
   wfake=$(make_spawn_fakebin "$base/w-fake")
   : > "$wlog"
   mkdir -p "$sm/user-home"
+  fm_test_preservation_satisfy "$sm/state" "$worker_id" "$base/agentlab-fixture" initial
   env FM_TRACE_CONTEXT="$TL_ENV_TC" TRACEPARENT="$TL_CARRIER" \
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$sm" HOME="$sm/user-home" CLAUDE_CONFIG_DIR='' \
     FM_STATE_OVERRIDE="$sm/state" FM_DATA_OVERRIDE="$sm/data" \
     FM_PROJECTS_OVERRIDE="$sm/projects" FM_CONFIG_OVERRIDE="$sm/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wwt" TMUX="fake,1,0" \
     FM_FAKE_LAUNCH_LOG="$wlog" PATH="$wfake:$PATH" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$base/agentlab-fixture/src" \
     "$SPAWN" "$worker_id" "$wproj" --mode no-mistakes --yolo off >/dev/null 2>&1 || true
 
   TL_WORKER_TP=$(meta_traceparent "$sm/state/$worker_id.meta")
