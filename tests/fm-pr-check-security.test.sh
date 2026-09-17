@@ -3,8 +3,8 @@
 # private atomic artifacts, authenticated custom checks, and teardown cleanup.
 set -u
 
-# shellcheck source=tests/lib.sh disable=SC1091
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-pr-lib.sh"
 # shellcheck source=/dev/null
@@ -581,7 +581,9 @@ exit 0
 SH
   chmod 0700 "$dir/fakebin/tmux"
   touch "$dir/home/state/.last-watcher-beat"
+  fm_test_preservation_satisfy "$dir/home/state" Task_A.1 "$dir/agentlab-fixture" final
   FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
     "$TEARDOWN" Task_A.1 --force > "$dir/teardown.out" 2> "$dir/teardown.err" \
     || fail "safe lifecycle-compatible task ID could not be torn down"
   [ ! -e "$dir/home/state/Task_A.1.meta" ] \
@@ -623,7 +625,9 @@ SH
       || fail "path-safe legacy task ID could not use the PR merge flow"
     fm_pr_poll_artifacts_valid "$dir/home/state" "$id" "$POLL" \
       || fail "path-safe legacy task ID did not publish an authenticated poll"
+    fm_test_preservation_satisfy "$dir/home/state" "$id" "$dir/agentlab-fixture" final
     FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
+      FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
       "$TEARDOWN" "$id" --force > "$dir/teardown.out" 2> "$dir/teardown.err" \
       || fail "legacy path-safe task ID could not be torn down"
     [ ! -e "$dir/home/state/$id.meta" ] || fail "legacy task teardown retained metadata"
@@ -1217,7 +1221,9 @@ SH
   chmod +x "$fakebin/tmux"
   touch "$dir/home/state/.last-watcher-beat"
 
+  fm_test_preservation_satisfy "$dir/home/state" task-a "$dir/agentlab-fixture" final
   FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
     "$TEARDOWN" task-a --force > "$dir/teardown.out" 2> "$dir/teardown.err" \
     || fail "teardown cleanup fixture failed"
   [ ! -e "$dir/home/state/task-a.check.sh" ] || fail "teardown left the runnable check"
@@ -1247,7 +1253,9 @@ exit 0
 SH
   chmod +x "$fakebin/tmux"
   touch "$dir/home/state/.last-watcher-beat"
+  fm_test_preservation_satisfy "$dir/home/state" task-a "$dir/agentlab-fixture" final
   FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$dir/agentlab-fixture/src" \
     "$TEARDOWN" task-a --force > "$dir/teardown.out" 2> "$dir/teardown.err" \
     || fail "teardown could not finish a valid crash-left retirement receipt"
   assert_poll_absent "$dir/home/state" task-a

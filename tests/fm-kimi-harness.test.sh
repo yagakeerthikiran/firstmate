@@ -2,8 +2,8 @@
 # Behavior tests for the verified Kimi Code CLI crewmate adapter.
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 # bin/fm-harness.sh checks verified ENV markers before ancestry. A suite run
 # from inside Cursor, Claude, Pi, or Grok inherits those markers, which outrank
@@ -167,6 +167,8 @@ EOF
 run_spawn() {
   local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6
   shift 6
+  fm_test_preservation_satisfy "$home/state" "$id" "$home/agentlab-fixture" initial
+  FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
   HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
@@ -440,10 +442,13 @@ test_kimi_teardown_removes_pointer_and_registry_token() {
   expect_code 0 "$rc" "Kimi spawn should succeed before teardown"
   token=$(sed -n 's/^token=//p' "$WT_DIR/.fm-kimi-turnend")
 
+  fm_test_preservation_satisfy "$HOME_DIR/state" "$id" "$HOME_DIR/agentlab-fixture" final \
+    "$(git -C "$WT_DIR" rev-parse HEAD)"
   HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
     FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
     FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
     FM_SPAWN_NO_GUARD=1 PATH="$FAKEBIN_DIR:$BASE_PATH" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$HOME_DIR/agentlab-fixture/src" \
     "$TEARDOWN" "$id" --force >/dev/null 2>&1 || fail "Kimi teardown failed"
   assert_absent "$WT_DIR/.fm-kimi-turnend" "Kimi token pointer survived teardown"
   assert_absent "$HOME_DIR/.kimi-code/fm-turn-end.d/$token" "Kimi registry token survived teardown"
