@@ -410,6 +410,43 @@ test_verify_reads_ledger_from_the_exact_receipt_commit_not_a_later_edit() {
   esac
 }
 
+# make_path_without_tar <dir>: a symlink farm exposing every executable
+# fm_preservation_verify's commit-snapshot path needs (a real git worktree
+# checkout, not archive/tar), deliberately missing tar, matching
+# tests/fm-teardown.test.sh's make_path_without_lsof convention.
+make_path_without_tar() {
+  local dir=$1 path_dir="$1/path-without-tar" cmd resolved
+  mkdir -p "$path_dir"
+  for cmd in awk bash basename cat chmod cp cut date dirname env find git grep head hostname id ln \
+    mkdir mktemp mv node perl ps readlink realpath rm sed sh sleep sort stat tail timeout tr uname wc xargs; do
+    resolved=$(command -v "$cmd" 2>/dev/null) || continue
+    case "$resolved" in /*) ln -sf "$resolved" "$path_dir/$cmd" ;; esac
+  done
+  printf '%s\n' "$path_dir"
+}
+
+test_verify_snapshot_succeeds_without_tar_on_path() {
+  local dir="$TMP_ROOT/verify-no-tar" sha out path_without_tar
+  build_gate_fixture "$dir"
+  sha=$(commit_checkpoint "$dir" "no-tar content")
+  write_receipt "$dir/state" task-x1 final "$sha"
+  path_without_tar=$(make_path_without_tar "$dir")
+  PATH="$path_without_tar" command -v tar >/dev/null 2>&1 \
+    && fail "verify-without-tar: fixture PATH unexpectedly exposes tar"
+  out=$(FM_PRESERVATION_AGENTLAB_ROOT="$dir/src" FM_HOME="$dir" PATH="$path_without_tar" bash -c '
+    . "$1"
+    if fm_preservation_verify "$2" "$3" "$4"; then
+      printf "PASS\n"
+    else
+      printf "FAIL: %s\n" "$FM_PRESERVATION_VERIFY_ERROR"
+    fi
+  ' _ "$PRESERVATION_LIB" "$dir/state" task-x1 final)
+  case "$out" in
+    PASS) pass "verify materializes its commit snapshot with git alone, succeeding even when tar is absent from PATH" ;;
+    *) fail "expected verify to succeed without tar on PATH, got: $out" ;;
+  esac
+}
+
 # --- bin/fm-preservation-record.sh: real receipt ingestion ------------------
 
 test_record_accepts_a_pre_worktree_receipt_with_no_app_head() {
@@ -862,6 +899,7 @@ test_verify_secondmate_refuses_when_backlog_is_newer_than_the_receipt
 test_verify_secondmate_refuses_a_head_mismatch
 test_verify_refuses_old_receipt_when_evidence_exists_only_on_a_later_commit
 test_verify_reads_ledger_from_the_exact_receipt_commit_not_a_later_edit
+test_verify_snapshot_succeeds_without_tar_on_path
 test_record_accepts_a_pre_worktree_receipt_with_no_app_head
 test_waiver_records_words_and_lets_verify_stay_refused
 test_teardown_refuses_without_a_final_receipt

@@ -252,35 +252,31 @@ fm_preservation_verify() {
   # or current checkout of $agentlab_root, which could hold a later or
   # earlier commit than the one the receipt actually names. A later main
   # commit adding evidence the old receipt lacked, or editing the ledger,
-  # must never change an already-recorded receipt's verdict. git archive
-  # preserves the checkpoint's own repository-relative path
-  # (checkpoints/<home>/<task>/...) inside the snapshot, which the validator
-  # needs intact for its own ledger/context-relative lookups.
+  # must never change an already-recorded receipt's verdict. A detached
+  # worktree (git-only, no external archive/tar dependency, since a caller's
+  # restricted PATH may lack one) preserves the checkpoint's own
+  # repository-relative path (checkpoints/<home>/<task>/...) inside the
+  # snapshot, which the validator needs intact for its own
+  # ledger/context-relative lookups. It never touches the live checkout's own
+  # index or HEAD.
   local snapshot_dir
   snapshot_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-preservation-snapshot.XXXXXX") || {
     FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation verification could not create a temp directory to snapshot commit $commit"
     return 1
   }
+  # git worktree add refuses a target directory that already exists, so the
+  # mktemp -d placeholder above (used only to obtain a guaranteed-unique path)
+  # is removed immediately before git re-creates it as the worktree. rm, not
+  # rmdir, so this still works under a caller's minimal PATH.
+  rm -rf -- "$snapshot_dir" 2>/dev/null || true
   # shellcheck disable=SC2064 # snapshot_dir is intentionally expanded now: it
   # never changes for the rest of this call, and the trap must name this exact
   # directory rather than re-reading a variable that could be cleared first.
-  trap "rm -rf -- '$snapshot_dir'" RETURN
-  # A staged tar file (rather than a live git-archive|tar pipe) keeps each
-  # step's exit status a plain, direct check: a RETURN trap active alongside
-  # set -e can leave PIPESTATUS incompletely populated for a pipeline run in
-  # this same function.
-  local snapshot_tar="$snapshot_dir.tar"
-  if ! git -C "$agentlab_root" archive --format=tar -o "$snapshot_tar" "$commit" 2>/dev/null; then
-    rm -f -- "$snapshot_tar"
+  trap "git -C '$agentlab_root' worktree remove --force '$snapshot_dir' >/dev/null 2>&1 || rm -rf -- '$snapshot_dir'; git -C '$agentlab_root' worktree prune >/dev/null 2>&1 || true" RETURN
+  if ! git -C "$agentlab_root" worktree add --quiet --detach "$snapshot_dir" "$commit" 2>/dev/null; then
     FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation verification could not materialize an immutable snapshot of commit $commit"
     return 1
   fi
-  if ! tar -x -f "$snapshot_tar" -C "$snapshot_dir" 2>/dev/null; then
-    rm -f -- "$snapshot_tar"
-    FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation verification could not materialize an immutable snapshot of commit $commit"
-    return 1
-  fi
-  rm -f -- "$snapshot_tar"
 
   tmp_checkpoint="$snapshot_dir/$path"
   if [ ! -f "$tmp_checkpoint" ]; then
