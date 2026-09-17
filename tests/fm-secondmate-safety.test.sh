@@ -1520,11 +1520,12 @@ test_fm_send_refuses_bare_window_without_home_meta() {
 }
 
 test_secondmate_teardown_retires_empty_home() {
-  local home subhome subhome_abs fakebin log lease fmroot
+  local home subhome subhome_abs fakebin log lease fmroot fmroot_head
   home="$TMP_ROOT/teardown-home"
   subhome="$TMP_ROOT/teardown-subhome"
   fmroot="$TMP_ROOT/teardown-fmroot"
   make_firstmate_git_root "$fmroot"
+  fmroot_head=$(git -C "$fmroot" rev-parse HEAD)
   git -C "$fmroot" worktree add --quiet --detach "$subhome" HEAD
   mkdir -p "$home/state" "$home/data" "$subhome/state"
   printf 'domain\n' > "$subhome/.fm-secondmate-home"
@@ -1545,8 +1546,9 @@ EOF
   log="$TMP_ROOT/teardown-fake/tmux.log"
   lease="$TMP_ROOT/teardown-fake/lease"
   printf 'domain\n' > "$lease"
+  fm_test_preservation_satisfy "$home/state" domain "$TMP_ROOT/agentlab-fixture" final "$fmroot_head"
   PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$fmroot" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-fake/pane.txt" \
-    FM_FAKE_TREEHOUSE_LEASE_FILE="$lease" \
+    FM_FAKE_TREEHOUSE_LEASE_FILE="$lease" FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
     "$ROOT/bin/fm-teardown.sh" domain >/dev/null 2>/dev/null \
     || fail "teardown failed for empty secondmate home"
   grep -F "treehouse return --force $subhome_abs" "$log" >/dev/null || fail "teardown did not release the secondmate home lease via treehouse return"
@@ -1620,10 +1622,12 @@ test_secondmate_teardown_sweeps_process_events_before_removal() {
   printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
   fakebin=$(make_fake_tmux "$TMP_ROOT/procevent-teardown-fake")
   log="$TMP_ROOT/procevent-teardown-fake/tmux.log"
+  fm_test_preservation_satisfy "$home/state" domain "$TMP_ROOT/agentlab-fixture" final \
+    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 
   PATH="$fakebin:$PATH" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" \
     FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/procevent-teardown-fake/pane.txt" \
-    FM_FAKE_PROCEVENT_SWEEP_LOG="$sweep_log" \
+    FM_FAKE_PROCEVENT_SWEEP_LOG="$sweep_log" FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
     "$ROOT/bin/fm-teardown.sh" domain >/dev/null 2>/dev/null \
     || fail "normal secondmate teardown failed after process-event sweep"
   grep -Fx "$subhome_abs" "$sweep_log" >/dev/null || fail "normal secondmate teardown did not invoke the child home's sweep"

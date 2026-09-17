@@ -236,9 +236,12 @@ phase_teardown() {
     || fail "could not settle receiver wake retirement state"
   printf 'confirmed:%s\n' "$corr" > "$HOME_DIR/state/.backlog-handoff-design.wake-pending"
   : > "$LOG"
+  fm_test_preservation_satisfy "$HOME_DIR/state" design "$TMP_ROOT/agentlab-fixture" final \
+    "$(git -C "$SUB" rev-parse HEAD)"
   teardown_out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$HOME_DIR" FM_FAKE_TMUX_LOG="$LOG" FM_FAKE_TMUX_CAPTURE="$PANE" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
     "$ROOT/bin/fm-teardown.sh" design 2>&1) \
-    || fail "teardown failed for the empty secondmate home"
+    || fail "teardown failed for the empty secondmate home: $teardown_out"
   printf '%s\n' "$teardown_out" | grep -F 'Backlog:' >/dev/null \
     && fail "secondmate teardown emitted a main-backlog completion reminder"
   assert_absent "$SUB" "teardown did not remove the retired secondmate home"

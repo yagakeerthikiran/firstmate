@@ -161,6 +161,7 @@ test_relative_home_overrides_launch_with_absolute_cross_process_paths() {
   mkdir -p "$CASE_DIR/cdpath/home/state" "$CASE_DIR/cdpath/home/data"
   : > "$LAUNCH_LOG"
 
+  fm_test_preservation_satisfy "$HOME_DIR/state" "$id" "$CASE_DIR/agentlab-fixture" initial
   out=$(
     cd "$CASE_DIR" || exit 1
     CDPATH="$CASE_DIR/cdpath" FM_ROOT_OVERRIDE='' FM_HOME=home \
@@ -169,6 +170,7 @@ test_relative_home_overrides_launch_with_absolute_cross_process_paths() {
       FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
       CLAUDE_CONFIG_DIR='' FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" \
       GROK_HOME=home/grok-home PATH="$FAKEBIN_DIR:$PATH" \
+      FM_PRESERVATION_AGENTLAB_ROOT="$CASE_DIR/agentlab-fixture/src" \
       "$SPAWN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1
   )
   status=$?
@@ -190,6 +192,7 @@ test_home_defaults_preserve_absolute_or_resolve_relative_paths() {
   home_real=$(cd "$HOME_DIR" && pwd -P)
 
   : > "$LAUNCH_LOG"
+  fm_test_preservation_satisfy "$HOME_DIR/state" "$relative_id" "$CASE_DIR/agentlab-fixture" initial
   out=$(
     cd "$CASE_DIR" || exit 1
     FM_ROOT_OVERRIDE='' FM_HOME=home \
@@ -198,6 +201,7 @@ test_home_defaults_preserve_absolute_or_resolve_relative_paths() {
       FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
       CLAUDE_CONFIG_DIR='' FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" \
       GROK_HOME=home/grok-home PATH="$FAKEBIN_DIR:$PATH" \
+      FM_PRESERVATION_AGENTLAB_ROOT="$CASE_DIR/agentlab-fixture/src" \
       "$SPAWN" "$relative_id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1
   )
   status=$?
@@ -211,6 +215,7 @@ test_home_defaults_preserve_absolute_or_resolve_relative_paths() {
   linked_home="$CASE_DIR/home-link"
   ln -s "$HOME_DIR" "$linked_home"
   : > "$LAUNCH_LOG"
+  fm_test_preservation_satisfy "$HOME_DIR/state" "$absolute_id" "$CASE_DIR/agentlab-fixture" initial
   out=$(
     FM_ROOT_OVERRIDE='' FM_HOME="$linked_home" \
       FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' \
@@ -218,6 +223,7 @@ test_home_defaults_preserve_absolute_or_resolve_relative_paths() {
       FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
       CLAUDE_CONFIG_DIR='' FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" \
       GROK_HOME="$linked_home/grok-home" PATH="$FAKEBIN_DIR:$PATH" \
+      FM_PRESERVATION_AGENTLAB_ROOT="$CASE_DIR/agentlab-fixture/src" \
       "$SPAWN" "$absolute_id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1
   )
   status=$?
@@ -239,6 +245,7 @@ test_absolute_override_spelling_is_preserved_in_launch_paths() {
   ln -s "$HOME_DIR" "$linked_home"
   : > "$LAUNCH_LOG"
 
+  fm_test_preservation_satisfy "$HOME_DIR/state" "$id" "$CASE_DIR/agentlab-fixture" initial
   out=$(
     FM_ROOT_OVERRIDE='' FM_HOME="$linked_home" \
       FM_STATE_OVERRIDE="$linked_home/state" FM_DATA_OVERRIDE="$linked_home/data" \
@@ -246,6 +253,7 @@ test_absolute_override_spelling_is_preserved_in_launch_paths() {
       FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
       CLAUDE_CONFIG_DIR='' FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" \
       GROK_HOME="$linked_home/grok-home" PATH="$FAKEBIN_DIR:$PATH" \
+      FM_PRESERVATION_AGENTLAB_ROOT="$CASE_DIR/agentlab-fixture/src" \
       "$SPAWN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1
   )
   status=$?
@@ -634,6 +642,8 @@ test_batch_preserves_native_ultra() {
   rec=$(make_spawn_case ultra-batch pi "$id1" "$id2")
   read_case_record "$rec"
   enable_dispatch_profile "$HOME_DIR"
+  fm_test_preservation_satisfy "$HOME_DIR/state" "$id1" "$HOME_DIR/agentlab-fixture" initial
+  fm_test_preservation_satisfy "$HOME_DIR/state" "$id2" "$HOME_DIR/agentlab-fixture" initial
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness pi --model codex-native/gpt-6-astra --effort ultra)
   expect_code 0 "$?" "native Ultra batch failed: $out"
@@ -793,6 +803,8 @@ test_batch_forwards_shared_profile_flags() {
   rec=$(make_spawn_case profile-batch claude "$id1" "$id2")
   read_case_record "$rec"
   enable_dispatch_profile "$HOME_DIR"
+  fm_test_preservation_satisfy "$HOME_DIR/state" "$id1" "$HOME_DIR/agentlab-fixture" initial
+  fm_test_preservation_satisfy "$HOME_DIR/state" "$id2" "$HOME_DIR/agentlab-fixture" initial
 
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness codex --model gpt-5 --effort high)

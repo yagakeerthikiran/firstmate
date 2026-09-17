@@ -81,8 +81,11 @@ EOF
   expect_code 0 "$status" "grok spawn should succeed before teardown"
   token=$(sed -n 's/^token=//p' "$wt/.fm-grok-turnend")
 
+  fm_test_preservation_satisfy "$home/state" "$id" "$home/agentlab-fixture" final \
+    "$(git -C "$wt" rev-parse HEAD 2>/dev/null || true)"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
     GROK_HOME="$grok_home" PATH="$fakebin:$PATH" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
     "$TEARDOWN" "$id" --force >/dev/null 2>&1 \
     || fail "grok teardown failed"
 

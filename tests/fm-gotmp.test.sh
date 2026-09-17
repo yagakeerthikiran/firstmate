@@ -40,6 +40,40 @@ trap cleanup EXIT
 
 TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-gotmp-tests.XXXXXX")
 
+# satisfy_preservation_gate <fake_root> <id>: this suite hand-builds its own
+# fake FM_HOME rather than sourcing tests/fixtures.sh, so it satisfies the
+# AgentLab preservation gate (bin/fm-preservation-lib.sh) the same self-contained
+# way - a minimal always-passing AgentLab clone plus a final receipt for <id>.
+# A nonexistent worktree (this fixture's whole point) means fm_preservation_verify
+# never reaches its app-head check, so no app_head is needed here.
+satisfy_preservation_gate() {
+  local fake=$1 id=$2
+  local agentlab="$fake/agentlab"
+  mkdir -p "$agentlab/src/scripts" "$agentlab/src/checkpoints/gotmp-home/$id"
+  git init -q -b main "$agentlab/src"
+  printf '%s\n' 'export {}' > "$agentlab/src/scripts/validate-checkpoint.mjs"
+  printf '# checkpoint\n' > "$agentlab/src/checkpoints/gotmp-home/$id/001--fixture--final.md"
+  git -C "$agentlab/src" add -A
+  git -C "$agentlab/src" -c user.email=t@t -c user.name=t commit -q -m fixture
+  git init -q --bare "$agentlab/origin.git"
+  git -C "$agentlab/src" remote add origin "$agentlab/origin.git"
+  git -C "$agentlab/src" push -q origin main
+  ln -s "$ROOT/bin/fm-preservation-lib.sh" "$fake/bin/fm-preservation-lib.sh"
+  local sha
+  sha=$(git -C "$agentlab/src" rev-parse HEAD)
+  node -e '
+    const fs = require("node:fs");
+    const [p, id, commit] = process.argv.slice(1);
+    const now = new Date().toISOString();
+    fs.appendFileSync(p, JSON.stringify({
+      kind: "final", task: id, home: "gotmp-home", commit,
+      path: "checkpoints/gotmp-home/" + id + "/001--fixture--final.md",
+      branch: "main", app_branch: "", app_head: "",
+      timestamp: now, recorded_at: now,
+    }) + "\n");
+  ' "$fake/state/$id.preservation" "$id" "$sha"
+}
+
 # Build a fake FM_HOME/FM_ROOT so the real fm-teardown.sh (symlinked in) resolves
 # state and helper scripts inside it. Stub the helper scripts fm-teardown calls so no
 # live tmux/treehouse/fleet state is touched. A nonexistent worktree path makes both
@@ -126,6 +160,7 @@ mode=no-mistakes
 yolo=off
 tasktmp=$tasktmp
 META
+  satisfy_preservation_gate "$fake" "$id"
   printf '%s' "$fake"
 }
 
@@ -141,7 +176,7 @@ test_teardown_removes_tasktmp_dir() {
   # Sanity: dir + contents exist before teardown.
   [ -d "$task_tmp/gotmp" ] || fail "precondition: gotmp missing before teardown"
   # Run the REAL teardown against the fake root.
-  FM_HOME="$fake" bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
+  FM_HOME="$fake" FM_PRESERVATION_AGENTLAB_ROOT="$fake/agentlab/src" bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
     || fail "teardown exited non-zero with a valid tasktmp"
   [ ! -e "$task_tmp" ] \
     || fail "teardown did not remove the tasktmp dir ($task_tmp still exists)"
@@ -217,7 +252,8 @@ kind=ship
 mode=no-mistakes
 yolo=off
 META
-  FM_HOME="$fake" bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
+  satisfy_preservation_gate "$fake" "$id"
+  FM_HOME="$fake" FM_PRESERVATION_AGENTLAB_ROOT="$fake/agentlab/src" bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
     || fail "teardown exited non-zero when tasktmp= was absent"
   pass "fm-teardown skips gracefully when tasktmp= is absent (backward compat)"
 }
@@ -230,7 +266,7 @@ test_teardown_skips_gracefully_when_dir_missing() {
   [ ! -e "$task_tmp" ] || fail "precondition: task_tmp should not exist yet"
   local fake
   fake=$(make_fake_root "$id" "$task_tmp")
-  FM_HOME="$fake" bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
+  FM_HOME="$fake" FM_PRESERVATION_AGENTLAB_ROOT="$fake/agentlab/src" bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
     || fail "teardown exited non-zero when tasktmp dir was missing"
   [ ! -e "$task_tmp" ] || fail "teardown created/left the tasktmp dir unexpectedly"
   pass "fm-teardown skips gracefully when tasktmp= points to a nonexistent dir"

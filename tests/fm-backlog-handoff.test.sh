@@ -724,10 +724,13 @@ SH
   assert_present "$home/state/design.meta" "failed teardown removed route metadata"
   assert_grep '- design ' "$home/data/secondmates.md" "failed teardown removed the registry route"
 
+  fm_test_preservation_satisfy "$home/state" design "$TMP_ROOT/agentlab-fixture" final \
+    "0000000000000000000000000000000000000000"
   PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     FM_FAKE_TMUX_WINDOW='firstmate:fm-design' \
     FM_FAKE_TMUX_LOG="$TMP_ROOT/teardown-home-fail-tmux.log" \
     FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-home-fail-fake/pane.txt" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP_ROOT/agentlab-fixture/src" \
     "$ROOT/bin/fm-teardown.sh" design --force > "$TMP_ROOT/teardown-home-retry.out" 2>&1 \
     || fail "teardown retry did not retire the preserved wake: $(cat "$TMP_ROOT/teardown-home-retry.out")"
   assert_absent "$sub" "teardown retry left the receiver home"

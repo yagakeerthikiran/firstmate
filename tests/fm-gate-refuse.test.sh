@@ -170,7 +170,9 @@ test_spawn_refuses_and_admits() {
   assert_absent "$home/state/spawn-backstop.meta" "spawn: refused backstop launch must not record meta"
 
   # no-regression: neutral cwd, marker UNSET, genuine isolated worktree.
-  out=$(run_spawn "$NORMAL_CWD" "$home" spawn-ok "$proj" "$wt" "$fakebin"); rc=$?
+  fm_test_preservation_satisfy "$home/state" spawn-ok "$TMP/agentlab-fixture" initial
+  out=$(run_spawn "$NORMAL_CWD" "$home" spawn-ok "$proj" "$wt" "$fakebin" \
+    FM_PRESERVATION_AGENTLAB_ROOT="$TMP/agentlab-fixture/src"); rc=$?
   expect_code 0 "$rc" "spawn: a normal session must still spawn"
   assert_contains "$out" "spawned spawn-ok" "spawn: normal launch should report success"
   assert_not_contains "$out" "$ENV_MSG" "spawn: normal launch must not print the gate refusal"
@@ -340,7 +342,10 @@ test_teardown_refuses_and_admits() {
 
   # no-regression: a normal session tears down the landed task.
   case_dir=$(make_teardown_case teardown-ok)
-  out=$(run_teardown "$NORMAL_CWD" "$case_dir"); rc=$?
+  fm_test_preservation_satisfy "$case_dir/state" task-x1 "$case_dir/agentlab-fixture" final \
+    "$(git -C "$case_dir/wt" rev-parse HEAD)"
+  out=$(run_teardown "$NORMAL_CWD" "$case_dir" \
+    "FM_PRESERVATION_AGENTLAB_ROOT=$case_dir/agentlab-fixture/src"); rc=$?
   expect_code 0 "$rc" "teardown: a normal session must still tear down landed work"
   assert_not_contains "$out" "$ENV_MSG" "teardown: normal teardown must not print the gate refusal"
   assert_not_contains "$out" "$PATH_MSG" "teardown: normal teardown must not print the backstop refusal"

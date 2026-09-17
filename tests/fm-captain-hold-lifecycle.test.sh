@@ -5,9 +5,9 @@
 # compatibility for pre-collapse decision identities.
 set -u
 
-# shellcheck source=tests/lib.sh
+# shellcheck source=tests/fixtures.sh
 # shellcheck disable=SC1091
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$ROOT/bin/fm-timeout-lib.sh"
 
@@ -68,10 +68,25 @@ run_bearings() {  # <home> [extra args]
 }
 
 run_teardown() {  # <home> <id>
-  local home=$1 id=$2
+  local home=$1 id=$2 meta="$1/state/$2.meta" wt='' head=''
+  [ -f "$meta" ] && wt=$(sed -n 's/^worktree=//p' "$meta" | tail -1)
+  [ -z "$wt" ] || head=$(git -C "$wt" rev-parse HEAD 2>/dev/null || true)
+  fm_test_preservation_satisfy "$home/state" "$id" "$home/agentlab-fixture" final "$head"
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id"
+    FM_CONFIG_OVERRIDE="$home/config" FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
+    "$TEARDOWN" "$id"
+}
+
+# preservation_ok_for <home> <id>: pre-satisfies the preservation gate for a
+# direct (non-run_teardown-wrapped) $TEARDOWN invocation. Pass
+# FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" on that
+# invocation's own env list.
+preservation_ok_for() {
+  local home=$1 id=$2 meta="$1/state/$2.meta" wt='' head=''
+  [ -f "$meta" ] && wt=$(sed -n 's/^worktree=//p' "$meta" | tail -1)
+  [ -z "$wt" ] || head=$(git -C "$wt" rev-parse HEAD 2>/dev/null || true)
+  fm_test_preservation_satisfy "$home/state" "$id" "$home/agentlab-fixture" final "$head"
 }
 
 tasks_in() {  # <home> <tasks-axi args...>
@@ -2571,9 +2586,11 @@ test_teardown_never_closes_a_captain_held_task() {
   printf '# Sample forced path\n\nOne captain choice remains.\n' > "$home/data/$forced/report.md"
   run_captain "$home" hold "$forced" --reason "captain must choose the sample forced path" >/dev/null \
     || fail "could not hold the forced fixture for the captain"
+  preservation_ok_for "$home" "$forced"
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$forced" --force \
+    FM_CONFIG_OVERRIDE="$home/config" FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
+    "$TEARDOWN" "$forced" --force \
     > "$home/forced.out" 2> "$home/forced.err" \
     || fail "forced cleanup failed: $(cat "$home/forced.err")"
   show=$(tasks_in "$home" show "$forced" --full) || fail "forced cleanup erased the captain-held row"
@@ -2874,10 +2891,12 @@ exit 1
 SH
   chmod +x "$home/fakebin/treehouse"
 
+  preservation_ok_for "$home" "$id"
   set +e
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id" --force \
+    FM_CONFIG_OVERRIDE="$home/config" FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
+    "$TEARDOWN" "$id" --force \
     > "$home/teardown.out" 2> "$home/teardown.err"
   rc=$?
   set -e
@@ -2933,10 +2952,12 @@ exit 1
 SH
   chmod +x "$home/fakebin/treehouse"
 
+  preservation_ok_for "$home" "$id"
   set +e
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id" --force \
+    FM_CONFIG_OVERRIDE="$home/config" FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
+    "$TEARDOWN" "$id" --force \
     > "$home/teardown.out" 2> "$home/teardown.err"
   rc=$?
   set -e
@@ -2987,10 +3008,12 @@ exit 1
 SH
   chmod +x "$home/fakebin/treehouse"
 
+  preservation_ok_for "$home" "$id"
   set +e
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id" --force \
+    FM_CONFIG_OVERRIDE="$home/config" FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
+    "$TEARDOWN" "$id" --force \
     > "$home/teardown.out" 2> "$home/teardown.err"
   rc=$?
   set -e
@@ -3051,10 +3074,12 @@ exit 1
 SH
   chmod +x "$home/fakebin/treehouse"
 
+  preservation_ok_for "$home" "$id"
   set +e
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$data" \
-    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id" --force \
+    FM_CONFIG_OVERRIDE="$home/config" FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
+    "$TEARDOWN" "$id" --force \
     > "$home/teardown.out" 2> "$home/teardown.err"
   rc=$?
   set -e
@@ -3123,9 +3148,11 @@ EOF
     "$ROOT/bin/fm-captain-hold.sh" complete "$id" "$id" >/dev/null \
     || fail "completion gate failed for the relocated captain hold"
 
+  preservation_ok_for "$home" "$id"
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$data" \
-    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id" \
+    FM_CONFIG_OVERRIDE="$home/config" FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
+    "$TEARDOWN" "$id" \
     > "$home/teardown.out" 2> "$home/teardown.err" \
     || fail "cleanup of the relocated captain hold failed: $(cat "$home/teardown.err")"
   show=$(cd "$home" && tasks-axi show "$id" --full --file "$data/backlog.md") \
@@ -3424,9 +3451,11 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation() {
   teardown_release="$home/reuse-teardown-release"
   merge_ready="$home/reuse-merge-ready"
   merge_release="$home/reuse-merge-release"
+  preservation_ok_for "$home" "$id"
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONFIG_OVERRIDE="$home/config" FM_TEST_REUSE_TEARDOWN=1 \
+    FM_CONFIG_OVERRIDE="$home/config" FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
+    FM_TEST_REUSE_TEARDOWN=1 \
     FM_TEST_REUSE_TEARDOWN_ONCE="$home/reuse-teardown-once" \
     FM_TEST_REUSE_TEARDOWN_READY="$teardown_ready" \
     FM_TEST_REUSE_TEARDOWN_RELEASE="$teardown_release" \
@@ -3514,9 +3543,11 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation() {
   local_teardown_release="$local_home/reuse-teardown-release"
   local_merge_ready="$local_home/reuse-merge-ready"
   local_merge_release="$local_home/reuse-merge-release"
+  preservation_ok_for "$local_home" "$local_id"
   PATH="$local_home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$local_home" \
     FM_STATE_OVERRIDE="$local_home/state" FM_DATA_OVERRIDE="$local_home/data" \
-    FM_CONFIG_OVERRIDE="$local_home/config" FM_TEST_REUSE_TEARDOWN=1 \
+    FM_CONFIG_OVERRIDE="$local_home/config" FM_PRESERVATION_AGENTLAB_ROOT="$local_home/agentlab-fixture/src" \
+    FM_TEST_REUSE_TEARDOWN=1 \
     FM_TEST_REUSE_TEARDOWN_ONCE="$local_home/reuse-teardown-once" \
     FM_TEST_REUSE_TEARDOWN_READY="$local_teardown_ready" \
     FM_TEST_REUSE_TEARDOWN_RELEASE="$local_teardown_release" \
@@ -3793,9 +3824,11 @@ test_released_merge_passes_the_entrypoint_and_lands() {
     "the approved merge remained captain-held after its release"
   run_pr_merge "$home" "$id" "$pr" > "$home/merge.out" 2> "$home/merge.err" \
     || fail "the released merge was refused: $(cat "$home/merge.err")"
+  preservation_ok_for "$home" "$id"
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id" --force \
+    FM_CONFIG_OVERRIDE="$home/config" FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
+    "$TEARDOWN" "$id" --force \
     > "$home/teardown.out" 2> "$home/teardown.err" \
     || fail "the released merge cleanup failed: $(cat "$home/teardown.err")"
   json=$(run_bearings "$home") || fail "Bearings failed after the released merge lifecycle"
@@ -3831,11 +3864,13 @@ exec "${REAL_TASKS_AXI:?}" "$@"
 SH
   chmod +x "$home/fakebin/tasks-axi"
 
+  preservation_ok_for "$home" "$id"
   set +e
   PATH="$home/fakebin:$PATH" REAL_TASKS_AXI="$TASKS_AXI_BIN" \
     TASKS_AXI_FAIL_SHOW_ID="$id" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id" --force \
+    FM_CONFIG_OVERRIDE="$home/config" FM_PRESERVATION_AGENTLAB_ROOT="$home/agentlab-fixture/src" \
+    "$TEARDOWN" "$id" --force \
     > "$home/teardown.out" 2> "$home/teardown.err"
   rc=$?
   set -e
