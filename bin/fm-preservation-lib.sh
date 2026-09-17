@@ -173,15 +173,18 @@ _fm_preservation_default_branch_head() {
   return 1
 }
 
-# fm_preservation_verify <state_dir> <id> <kind> [<worktree>] [<task_kind>]
+# fm_preservation_verify <state_dir> <id> <kind> [<worktree>] [<task_kind>] [<data_dir>]
 # kind is initial|update|final. worktree, when given and kind=final, checks the
 # receipt's app_head for staleness against it; task_kind (ship|scout|secondmate,
 # default ship) selects which staleness rule applies:
 #   ship (default): app_head is required and must equal worktree's current HEAD.
 #   scout: app_head may be empty (a scout has no code-review head to record);
 #     when given, it must equal worktree's current HEAD; the receipt's own
-#     timestamp must additionally be no older than the newest data/<id>/*.md
-#     report and the task's own status file.
+#     timestamp must additionally be no older than the newest data_dir/<id>/*.md
+#     report and the task's own status file. data_dir, when given, is the
+#     caller's own resolved data root (e.g. fm-teardown.sh's
+#     FM_DATA_OVERRIDE-aware DATA) so the two never diverge; it defaults to
+#     fm_home/data when omitted.
 #   secondmate: app_head is required and must equal worktree's (the secondmate
 #     home's own checkout) current default-branch head; the receipt's own
 #     timestamp must additionally be no older than that home's
@@ -190,8 +193,9 @@ _fm_preservation_default_branch_head() {
 # returns 1 on any failure; sets FM_PRESERVATION_VERIFY_RECEIPT (the matched
 # receipt JSON) and returns 0 on success.
 fm_preservation_verify() {
-  local state_dir=$1 id=$2 kind=$3 worktree=${4:-} task_kind=${5:-ship}
+  local state_dir=$1 id=$2 kind=$3 worktree=${4:-} task_kind=${5:-ship} data_dir=${6:-}
   local fm_home=${FM_HOME:-$FM_ROOT}
+  local data_root=${data_dir:-$fm_home/data}
   local record_path agentlab_root receipt commit path branch app_head validator
   local tmp_checkpoint rc offline_flag
 
@@ -322,7 +326,7 @@ fm_preservation_verify() {
           return 1
         }
         _fm_preservation_not_stale_against "$id" "$receipt_epoch" \
-          "$fm_home/data/$id"/*.md "$state_dir/$id.status" || return 1
+          "$data_root/$id"/*.md "$state_dir/$id.status" || return 1
         ;;
       secondmate)
         if [ -z "$app_head" ]; then

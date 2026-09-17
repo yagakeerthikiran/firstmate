@@ -76,20 +76,22 @@ write_receipt() {
   ' "$state_dir/$id.preservation" "$id" "$kind" "$commit" "$app_head" "$timestamp"
 }
 
-# run_verify <agentlab_dir> <state_dir> <id> <kind> [<worktree>] [<task_kind>]
+# run_verify <agentlab_dir> <state_dir> <id> <kind> [<worktree>] [<task_kind>] [<data_dir>]
 # Prints "PASS" or "FAIL: <error>". FM_HOME is pinned to agentlab_dir's parent
 # so a scout/secondmate task_kind's data/<id> and status-file freshness checks
-# resolve against the fixture, not the real firstmate home.
+# resolve against the fixture, not the real firstmate home. data_dir, when
+# given, is passed through as fm_preservation_verify's own data-root
+# argument, mirroring fm-teardown.sh's FM_DATA_OVERRIDE-aware DATA.
 run_verify() {
-  local agentlab_dir=$1 state_dir=$2 id=$3 kind=$4 wt=${5:-} task_kind=${6:-}
+  local agentlab_dir=$1 state_dir=$2 id=$3 kind=$4 wt=${5:-} task_kind=${6:-} data_dir=${7:-}
   FM_PRESERVATION_AGENTLAB_ROOT="$agentlab_dir/src" FM_HOME="$agentlab_dir" bash -c '
     . "$1"
-    if fm_preservation_verify "$2" "$3" "$4" "$5" "$6"; then
+    if fm_preservation_verify "$2" "$3" "$4" "$5" "$6" "$7"; then
       printf "PASS\n"
     else
       printf "FAIL: %s\n" "$FM_PRESERVATION_VERIFY_ERROR"
     fi
-  ' _ "$PRESERVATION_LIB" "$state_dir" "$id" "$kind" "$wt" "$task_kind"
+  ' _ "$PRESERVATION_LIB" "$state_dir" "$id" "$kind" "$wt" "$task_kind" "$data_dir"
 }
 
 # --- fm_preservation_verify: the library's own contract ---------------------
@@ -271,6 +273,42 @@ test_verify_scout_refuses_when_report_is_newer_than_the_receipt() {
     FAIL:*"is stale"*) pass "verify refuses a scout final receipt whose report was edited after the checkpoint" ;;
     *) fail "expected a stale-report refusal for a scout, got: $out" ;;
   esac
+}
+
+test_verify_scout_refuses_stale_report_at_a_data_override() {
+  local dir="$TMP_ROOT/verify-scout-stale-override" wt sha out
+  build_gate_fixture "$dir"
+  sha=$(commit_checkpoint "$dir" "scout final content")
+  wt="$dir/appwt"
+  fm_git_init_commit "$wt"
+  # Report lives under a separate data root, as it would under a real
+  # FM_DATA_OVERRIDE that diverges from FM_HOME/data; nothing is written
+  # under "$dir/data" at all, so a check that silently globbed FM_HOME/data
+  # would find no report and no-op the staleness check instead of refusing.
+  mkdir -p "$dir/altdata/task-x1"
+  printf 'report\n' > "$dir/altdata/task-x1/report.md"
+  fm_touch_epoch 1700000000 "$dir/altdata/task-x1/report.md"
+  write_receipt "$dir/state" task-x1 final "$sha" "" "2020-01-01T00:00:00Z"
+  out=$(run_verify "$dir" "$dir/state" task-x1 final "$wt" scout "$dir/altdata")
+  case "$out" in
+    FAIL:*"is stale"*) pass "verify refuses a scout final receipt whose report at a data-dir override was edited after the checkpoint" ;;
+    *) fail "expected a stale-report refusal against the data-dir override, got: $out" ;;
+  esac
+}
+
+test_verify_scout_allows_fresh_report_at_a_data_override() {
+  local dir="$TMP_ROOT/verify-scout-fresh-override" wt sha out
+  build_gate_fixture "$dir"
+  sha=$(commit_checkpoint "$dir" "scout final content")
+  wt="$dir/appwt"
+  fm_git_init_commit "$wt"
+  mkdir -p "$dir/altdata/task-x1"
+  printf 'report\n' > "$dir/altdata/task-x1/report.md"
+  fm_touch_epoch 1700000000 "$dir/altdata/task-x1/report.md"
+  write_receipt "$dir/state" task-x1 final "$sha" "" "2023-11-15T00:00:00Z"
+  out=$(run_verify "$dir" "$dir/state" task-x1 final "$wt" scout "$dir/altdata")
+  [ "$out" = PASS ] || fail "expected a fresh report at a data-dir override to pass for a scout, got: $out"
+  pass "verify allows a scout final receipt whose report at a data-dir override predates it"
 }
 
 test_verify_secondmate_requires_app_head() {
@@ -1105,6 +1143,8 @@ test_verify_tolerates_a_gone_worktree
 test_verify_only_matches_the_requested_kind_and_task
 test_verify_scout_allows_empty_app_head_when_report_is_fresh
 test_verify_scout_refuses_when_report_is_newer_than_the_receipt
+test_verify_scout_refuses_stale_report_at_a_data_override
+test_verify_scout_allows_fresh_report_at_a_data_override
 test_verify_secondmate_requires_app_head
 test_verify_secondmate_passes_with_matching_head_and_fresh_backlog
 test_verify_secondmate_refuses_when_backlog_is_newer_than_the_receipt
