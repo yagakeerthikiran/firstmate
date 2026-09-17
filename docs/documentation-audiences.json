@@ -353,6 +353,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "tests/fixtures/agentlab-validator/15f862b29216aa4d75b4714b157ebcf8b667f519/README.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/gitlab-merge-watch.md",
       "audience": "maintainer-verification"
     },
