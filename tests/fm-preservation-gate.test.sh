@@ -447,6 +447,216 @@ test_verify_snapshot_succeeds_without_tar_on_path() {
   esac
 }
 
+# --- fm_preservation_verify against the REAL AgentLab validator -------------
+#
+# Every other fixture in this file uses an always-pass/FAILME stub validator,
+# which cannot exercise the real validator's Git-backed checks (git ls-tree
+# HEAD, git cat-file, SHA resolution) - the guardian's finding on PR 3
+# (https://github.com/yagakeerthikiran/firstmate/pull/3#issuecomment-5708894187).
+# These tests vendor the real validator
+# (tests/fixtures/agentlab-validator/<pinned-commit>/, see its README.md) and
+# build a real committed artifact, MANIFEST.json entry, and decision ledger
+# for it to resolve. Offline throughout (no network): FM_PRESERVATION_OFFLINE=1.
+
+REAL_VALIDATOR_DIR="$ROOT/tests/fixtures/agentlab-validator/15f862b29216aa4d75b4714b157ebcf8b667f519"
+
+# real_validator_seed <dir>: an AgentLab-shaped repo whose validator scripts
+# are the vendored REAL ones (not a stub). No checkpoint, artifact, or ledger
+# yet - callers add those in whatever commit sequence their test needs.
+# Echoes the seed commit's SHA (a real, resolvable-in-repo-root commit every
+# test cites as its "resolvable SHA" evidence).
+real_validator_seed() {
+  local dir=$1 sha
+  mkdir -p "$dir/src/scripts"
+  cp "$REAL_VALIDATOR_DIR/validate-checkpoint.mjs" "$dir/src/scripts/validate-checkpoint.mjs"
+  cp "$REAL_VALIDATOR_DIR/checkpoint-lib.mjs" "$dir/src/scripts/checkpoint-lib.mjs"
+  git init -q -b main "$dir/src"
+  git -C "$dir/src" add -A
+  git -C "$dir/src" -c user.email=t@t -c user.name=t commit -q -m "seed real-validator fixture"
+  git init -q --bare "$dir/origin.git"
+  git -C "$dir/src" remote add origin "$dir/origin.git"
+  git -C "$dir/src" push -q origin main
+  sha=$(git -C "$dir/src" rev-parse HEAD)
+  printf '%s\n' "$sha"
+}
+
+# real_validator_add_evidence <dir>: commits and pushes a genuine durable
+# artifact (artifacts/gate-home/task-x1/fixture-artifact.md) with a matching
+# MANIFEST.json entry (status PRESERVED, citable as data/task-x1/...) and a
+# decision ledger declaring D-1 - the evidence a checkpoint's citations,
+# decision reference, and artifact inventory resolve against.
+real_validator_add_evidence() {
+  local dir=$1
+  mkdir -p "$dir/src/artifacts/gate-home/task-x1" "$dir/src/checkpoints/gate-home/task-x1"
+  printf '# fixture artifact\npreserved content\n' > "$dir/src/artifacts/gate-home/task-x1/fixture-artifact.md"
+  cat > "$dir/src/artifacts/gate-home/task-x1/MANIFEST.json" <<'EOF'
+{
+  "entries": [
+    {
+      "source_path_non_durable": "data/task-x1/fixture-artifact.md",
+      "agentlab_path": "gate-home/task-x1/fixture-artifact.md",
+      "status": "PRESERVED",
+      "sha256_preserved": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
+EOF
+  cat > "$dir/src/checkpoints/gate-home/task-x1/decisions.ledger.md" <<'EOF'
+# Decision ledger: gate-home/task-x1
+
+### D-1 — 2026-01-01T00:00:00Z
+
+Fixture decision recorded for the real-validator integration test.
+EOF
+  git -C "$dir/src" add -A
+  git -C "$dir/src" -c user.email=t@t -c user.name=t commit -q -m "add real-validator fixture evidence"
+  git -C "$dir/src" push -q origin main
+}
+
+# real_validator_write_checkpoint <dir> <resolvable_sha> [blank_field]: renders
+# a real `final`-kind checkpoint via the vendored checkpoint-lib.mjs's own
+# renderTemplate (so it can never drift from the validator's own required
+# structure), fills every required header and branch-recovery field, and
+# cites the real artifact (resolves via MANIFEST.json), decision D-1 (resolves
+# via decisions.ledger.md), and <resolvable_sha> (resolves via `git cat-file
+# -e`) so the validator's citation, decision-ledger, and SHA checks are
+# genuinely exercised rather than stubbed. With [blank_field] given, that one
+# required header field is left empty instead of filled, so the resulting
+# checkpoint is genuinely invalid. Commits and pushes it; echoes the new
+# commit SHA.
+real_validator_write_checkpoint() {
+  local dir=$1 resolvable_sha=$2 blank_field=${3:-}
+  local file="$dir/src/checkpoints/gate-home/task-x1/001--fixture--final.md"
+  mkdir -p "$(dirname "$file")"
+  # checkpoint-lib.mjs runs its own `node checkpoint-lib.mjs template <kind>`
+  # CLI whenever `import.meta.url` equals `file://${process.argv[1]}` - true
+  # whenever ITS OWN PATH is passed as a positional argv, regardless of how it
+  # got imported. Pass everything through the environment instead, so
+  # process.argv stays empty and that self-CLI branch never fires.
+  CKPT_LIB_PATH="$dir/src/scripts/checkpoint-lib.mjs" \
+  CKPT_RESOLVABLE_SHA="$resolvable_sha" \
+  CKPT_BLANK_FIELD="$blank_field" \
+  node -e '
+    const { renderTemplate, BRANCH_RECOVERY_FIELDS } = await import(process.env.CKPT_LIB_PATH);
+    const resolvableSha = process.env.CKPT_RESOLVABLE_SHA;
+    const blankField = process.env.CKPT_BLANK_FIELD;
+    const header = {
+      "FirstMate model": "claude-sonnet-5",
+      "FirstMate Claude session ID": "00000000-0000-0000-0000-000000000001",
+      "FirstMate resume URL": "https://claude.ai/code/session_00000000-0000-0000-0000-000000000001",
+      "Initial session start": "2026-01-01T00:00:00Z",
+      "Checkpoint timestamp": "2026-01-01T01:00:00Z",
+      "Application repository": "yagakeerthikiran/firstmate",
+      "AgentLab report commit": resolvableSha,
+      "Current application branch": "UNAVAILABLE fixture has no application repo",
+      "Current application head SHA": "UNAVAILABLE fixture has no application repo",
+      "Associated PRs": "UNAVAILABLE fixture predates any PR",
+    };
+    if (blankField && Object.prototype.hasOwnProperty.call(header, blankField)) header[blankField] = "";
+    // Field names such as "Worktree path (historical context, non-durable)"
+    // contain regex metacharacters, and the real validator own
+    // extractBranchRecoveryFields regex matches a value with a trailing
+    // \s*(.*)$ - since \s also matches a newline, a genuinely empty value
+    // lets that same match swallow the ENTIRE NEXT LINE as this field value,
+    // silently dropping the next field from parsing. Escape every field name
+    // so the fill regex actually matches, and never leave a value empty.
+    const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    let text = renderTemplate("final");
+    for (const [field, value] of Object.entries(header)) {
+      text = text.replace(new RegExp("^" + escapeRe(field) + ":$", "m"), field + ": " + value);
+    }
+    for (const field of BRANCH_RECOVERY_FIELDS) {
+      const value = field === "Repository" ? "yagakeerthikiran/firstmate"
+        : field === "Base branch" ? "ops/main"
+        : field === "Base SHA" ? resolvableSha
+        : field === "Current head SHA" ? resolvableSha
+        : "UNAVAILABLE fixture has no branch state";
+      text = text.replace(new RegExp("^- " + escapeRe(field) + ": $", "m"), "- " + field + ": " + value);
+    }
+    // The first numbered section cites the real artifact, decision D-1, and
+    // the resolvable SHA - the evidence this suite proves is genuinely
+    // resolved, not stubbed.
+    text = text.replace(
+      /^## 1\. [^\n]*\n\nTODO\n/m,
+      (m) => m.replace(
+        "TODO",
+        "The artifact data/task-x1/fixture-artifact.md is preserved (decision D-1, " + resolvableSha + ")."
+      )
+    );
+    text = text.replace(
+      /^## Decision ledger references\n\nTODO\n/m,
+      "## Decision ledger references\n\nD-1 is recorded in checkpoints/gate-home/task-x1/decisions.ledger.md.\n"
+    );
+    text = text.replace(
+      /^## State line\n\nTODO\n/m,
+      "## State line\n\nState: fixture verification checkpoint; no claim of finishing the work is made here.\n"
+    );
+    process.stdout.write(text);
+  ' > "$file"
+  git -C "$dir/src" add -A
+  git -C "$dir/src" -c user.email=t@t -c user.name=t commit -q -m "fixture checkpoint"
+  git -C "$dir/src" push -q origin main
+  git -C "$dir/src" rev-parse HEAD
+}
+
+# run_real_verify <dir> <state_dir> <id> <commit>: like run_verify, but points
+# FM_PRESERVATION_AGENTLAB_ROOT at a real-validator fixture and forces
+# FM_PRESERVATION_OFFLINE=1 (no network; the real validator's PR-reference
+# check calls `gh api` unless offline).
+run_real_verify() {
+  local dir=$1 state_dir=$2 id=$3 commit=$4
+  write_receipt "$state_dir" "$id" final "$commit"
+  FM_PRESERVATION_AGENTLAB_ROOT="$dir/src" FM_PRESERVATION_OFFLINE=1 FM_HOME="$dir" bash -c '
+    . "$1"
+    if fm_preservation_verify "$2" "$3" final; then
+      printf "PASS\n"
+    else
+      printf "FAIL: %s\n" "$FM_PRESERVATION_VERIFY_ERROR"
+    fi
+  ' _ "$PRESERVATION_LIB" "$state_dir" "$id"
+}
+
+test_verify_passes_a_fully_valid_checkpoint_against_the_real_validator() {
+  local dir="$TMP_ROOT/real-validator-valid" seed_sha ckpt_sha out
+  seed_sha=$(real_validator_seed "$dir")
+  real_validator_add_evidence "$dir"
+  ckpt_sha=$(real_validator_write_checkpoint "$dir" "$seed_sha")
+  out=$(run_real_verify "$dir" "$dir/state" task-x1 "$ckpt_sha")
+  case "$out" in
+    PASS) pass "verify passes a fully valid exact-commit checkpoint against the real AgentLab validator" ;;
+    *) fail "expected the real validator to pass a fully valid checkpoint, got: $out" ;;
+  esac
+}
+
+test_verify_refuses_old_checkpoint_against_real_validator_when_evidence_lands_later() {
+  local dir="$TMP_ROOT/real-validator-evidence-later" seed_sha ckpt_sha out
+  seed_sha=$(real_validator_seed "$dir")
+  # The checkpoint is committed BEFORE the artifact/manifest/ledger it cites
+  # exist anywhere in the repo's history - the exact scenario the guardian
+  # asked to be proven against the real validator, not a stub.
+  ckpt_sha=$(real_validator_write_checkpoint "$dir" "$seed_sha")
+  real_validator_add_evidence "$dir"
+  out=$(run_real_verify "$dir" "$dir/state" task-x1 "$ckpt_sha")
+  case "$out" in
+    FAIL:*"validator failures"*"UNCOMMITTED_LOCAL_ARTIFACT"*) \
+      pass "verify still refuses the exact old commit against the real validator when its cited evidence lands only on a later commit" ;;
+    *) fail "expected the real validator to refuse the old commit despite later evidence, got: $out" ;;
+  esac
+}
+
+test_verify_refuses_an_invalid_checkpoint_with_the_real_validators_own_message() {
+  local dir="$TMP_ROOT/real-validator-invalid" seed_sha ckpt_sha out
+  seed_sha=$(real_validator_seed "$dir")
+  real_validator_add_evidence "$dir"
+  ckpt_sha=$(real_validator_write_checkpoint "$dir" "$seed_sha" "FirstMate Claude session ID")
+  out=$(run_real_verify "$dir" "$dir/state" task-x1 "$ckpt_sha")
+  case "$out" in
+    FAIL:*"validator failures"*"MISSING_FIRSTMATE_SESSION"*) \
+      pass "verify refuses an invalid checkpoint with the real validator's own failure tag" ;;
+    *) fail "expected the real validator's own MISSING_FIRSTMATE_SESSION failure, got: $out" ;;
+  esac
+}
+
 # --- bin/fm-preservation-record.sh: real receipt ingestion ------------------
 
 test_record_accepts_a_pre_worktree_receipt_with_no_app_head() {
@@ -900,6 +1110,9 @@ test_verify_secondmate_refuses_a_head_mismatch
 test_verify_refuses_old_receipt_when_evidence_exists_only_on_a_later_commit
 test_verify_reads_ledger_from_the_exact_receipt_commit_not_a_later_edit
 test_verify_snapshot_succeeds_without_tar_on_path
+test_verify_passes_a_fully_valid_checkpoint_against_the_real_validator
+test_verify_refuses_old_checkpoint_against_real_validator_when_evidence_lands_later
+test_verify_refuses_an_invalid_checkpoint_with_the_real_validators_own_message
 test_record_accepts_a_pre_worktree_receipt_with_no_app_head
 test_waiver_records_words_and_lets_verify_stay_refused
 test_teardown_refuses_without_a_final_receipt
