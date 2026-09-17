@@ -495,6 +495,10 @@
     {
       "path": "skills/stow/SKILL.md",
       "audience": "public-product"
+    },
+    {
+      "path": "tests/fixtures/agentlab-validator/15f862b29216aa4d75b4714b157ebcf8b667f519/README.md",
+      "audience": "maintainer-verification"
     }
   ]
 }
