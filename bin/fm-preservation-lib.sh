@@ -221,12 +221,6 @@ fm_preservation_verify() {
     return 1
   fi
 
-  validator="$agentlab_root/scripts/validate-checkpoint.mjs"
-  if [ ! -f "$validator" ]; then
-    FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation validator missing at $validator; refusing rather than skipping verification"
-    return 1
-  fi
-
   local fetch_out
   if ! fetch_out=$(git -C "$agentlab_root" fetch origin --quiet 2>&1); then
     FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation verification could not fetch origin for $agentlab_root: $(printf '%s' "$fetch_out" | tail -n 1)"
@@ -238,6 +232,10 @@ fm_preservation_verify() {
     return 1
   fi
 
+  # Reachability is proved against the declared remote branch, independently
+  # of and before the content snapshot below: a commit that is only local, or
+  # pushed to an undeclared branch, is refused here regardless of what its
+  # tree contains.
   if ! git -C "$agentlab_root" merge-base --is-ancestor "$commit" "origin/$branch" 2>/dev/null; then
     FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation $kind checkpoint commit $commit for task $id is not reachable from origin/$branch (committed locally but not pushed, or pushed to an undeclared branch)"
     return 1
@@ -248,24 +246,61 @@ fm_preservation_verify() {
     return 1
   fi
 
-  tmp_checkpoint=$(mktemp "${TMPDIR:-/tmp}/fm-preservation-checkpoint.XXXXXX") || {
-    FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation verification could not create a temp file to run the validator"
+  # Validate an immutable snapshot of the receipt's EXACT commit - the
+  # checkpoint, manifests, artifacts, ledger, and the validator script itself
+  # all as they existed at that commit - never against the live working tree
+  # or current checkout of $agentlab_root, which could hold a later or
+  # earlier commit than the one the receipt actually names. A later main
+  # commit adding evidence the old receipt lacked, or editing the ledger,
+  # must never change an already-recorded receipt's verdict. git archive
+  # preserves the checkpoint's own repository-relative path
+  # (checkpoints/<home>/<task>/...) inside the snapshot, which the validator
+  # needs intact for its own ledger/context-relative lookups.
+  local snapshot_dir
+  snapshot_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-preservation-snapshot.XXXXXX") || {
+    FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation verification could not create a temp directory to snapshot commit $commit"
     return 1
   }
-  if ! git -C "$agentlab_root" show "$commit:$path" > "$tmp_checkpoint" 2>/dev/null; then
-    rm -f -- "$tmp_checkpoint"
-    FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation verification could not extract $path at commit $commit"
+  # shellcheck disable=SC2064 # snapshot_dir is intentionally expanded now: it
+  # never changes for the rest of this call, and the trap must name this exact
+  # directory rather than re-reading a variable that could be cleared first.
+  trap "rm -rf -- '$snapshot_dir'" RETURN
+  # A staged tar file (rather than a live git-archive|tar pipe) keeps each
+  # step's exit status a plain, direct check: a RETURN trap active alongside
+  # set -e can leave PIPESTATUS incompletely populated for a pipeline run in
+  # this same function.
+  local snapshot_tar="$snapshot_dir.tar"
+  if ! git -C "$agentlab_root" archive --format=tar -o "$snapshot_tar" "$commit" 2>/dev/null; then
+    rm -f -- "$snapshot_tar"
+    FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation verification could not materialize an immutable snapshot of commit $commit"
     return 1
   fi
+  if ! tar -x -f "$snapshot_tar" -C "$snapshot_dir" 2>/dev/null; then
+    rm -f -- "$snapshot_tar"
+    FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation verification could not materialize an immutable snapshot of commit $commit"
+    return 1
+  fi
+  rm -f -- "$snapshot_tar"
+
+  tmp_checkpoint="$snapshot_dir/$path"
+  if [ ! -f "$tmp_checkpoint" ]; then
+    FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation $kind checkpoint file $path for task $id is missing at commit $commit"
+    return 1
+  fi
+
+  validator="$snapshot_dir/scripts/validate-checkpoint.mjs"
+  if [ ! -f "$validator" ]; then
+    FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation validator missing at commit $commit ($path); refusing rather than skipping verification"
+    return 1
+  fi
+
   offline_flag=()
   [ "${FM_PRESERVATION_OFFLINE:-0}" != 1 ] || offline_flag=(--offline)
   local validator_out
-  if ! validator_out=$(node "$validator" "$tmp_checkpoint" --repo-root "$agentlab_root" "${offline_flag[@]}" 2>&1); then
-    rm -f -- "$tmp_checkpoint"
+  if ! validator_out=$(node "$validator" "$tmp_checkpoint" --repo-root "$snapshot_dir" "${offline_flag[@]}" 2>&1); then
     FM_PRESERVATION_VERIFY_ERROR="REFUSED: preservation validator failures for $path@$commit: $(printf '%s' "$validator_out" | tr '\n' ';' )"
     return 1
   fi
-  rm -f -- "$tmp_checkpoint"
 
   # A worktree that no longer exists or is not (or no longer) an inspectable
   # git checkout is not automatically stale: fm-teardown.sh itself tolerates a

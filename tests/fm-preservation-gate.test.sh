@@ -337,6 +337,79 @@ test_verify_secondmate_refuses_a_head_mismatch() {
   esac
 }
 
+# build_ledger_fixture <dir> <ledger_json_or_empty>: like build_gate_fixture,
+# but the validator also requires a repo-root-relative ledger.json containing
+# the literal entry "e1"; <ledger_json_or_empty> is the array literal to write
+# there in the fixture's first commit (or empty to omit ledger.json entirely).
+# Exists so a test can commit a LATER change to ledger.json on main and prove
+# fm_preservation_verify still reads the ledger from the receipt's own exact
+# commit rather than the live checkout.
+build_ledger_fixture() {
+  local dir=$1 ledger_entries=$2
+  mkdir -p "$dir/src/scripts" "$dir/src/checkpoints/gate-home/task-x1"
+  git init -q -b main "$dir/src"
+  cat > "$dir/src/scripts/validate-checkpoint.mjs" <<'EOF'
+import fs from 'node:fs';
+import path from 'node:path';
+const repoRootIdx = process.argv.indexOf('--repo-root');
+const repoRoot = repoRootIdx >= 0 ? process.argv[repoRootIdx + 1] : '.';
+let ledger;
+try {
+  ledger = JSON.parse(fs.readFileSync(path.join(repoRoot, 'ledger.json'), 'utf8'));
+} catch {
+  console.error('validator: ledger.json missing or unreadable at repo-root');
+  process.exit(1);
+}
+if (!Array.isArray(ledger.entries) || !ledger.entries.includes('e1')) {
+  console.error('validator: ledger.json is missing required entry e1');
+  process.exit(1);
+}
+process.exit(0);
+EOF
+  [ -z "$ledger_entries" ] || printf '{"entries":%s}\n' "$ledger_entries" > "$dir/src/ledger.json"
+  printf '# checkpoint\n' > "$dir/src/checkpoints/gate-home/task-x1/001--fixture--final.md"
+  git -C "$dir/src" add -A
+  git -C "$dir/src" -c user.email=t@t -c user.name=t commit -q -m fixture
+  git init -q --bare "$dir/origin.git"
+  git -C "$dir/src" remote add origin "$dir/origin.git"
+  git -C "$dir/src" push -q origin main
+}
+
+test_verify_refuses_old_receipt_when_evidence_exists_only_on_a_later_commit() {
+  local dir="$TMP_ROOT/verify-ledger-missing-then-added" sha out
+  build_ledger_fixture "$dir" ""
+  sha=$(git -C "$dir/src" rev-parse HEAD)
+  write_receipt "$dir/state" task-x1 final "$sha"
+  # A later main commit adds the evidence the receipt's own commit never had.
+  printf '{"entries":["e1"]}\n' > "$dir/src/ledger.json"
+  git -C "$dir/src" add -A
+  git -C "$dir/src" -c user.email=t@t -c user.name=t commit -q -m "add ledger"
+  git -C "$dir/src" push -q origin main
+  out=$(run_verify "$dir" "$dir/state" task-x1 final)
+  case "$out" in
+    FAIL:*"validator failures"*) pass "verify still refuses an old receipt whose required evidence exists only on a later main commit" ;;
+    *) fail "expected the old receipt to still fail validation despite later evidence, got: $out" ;;
+  esac
+}
+
+test_verify_reads_ledger_from_the_exact_receipt_commit_not_a_later_edit() {
+  local dir="$TMP_ROOT/verify-ledger-edit-after-receipt" sha out
+  build_ledger_fixture "$dir" '["e1"]'
+  sha=$(git -C "$dir/src" rev-parse HEAD)
+  write_receipt "$dir/state" task-x1 final "$sha"
+  # A later main commit edits the ledger, dropping the entry the receipt's own
+  # commit actually recorded; the old receipt's verdict must not change.
+  printf '{"entries":["e2"]}\n' > "$dir/src/ledger.json"
+  git -C "$dir/src" add -A
+  git -C "$dir/src" -c user.email=t@t -c user.name=t commit -q -m "edit ledger"
+  git -C "$dir/src" push -q origin main
+  out=$(run_verify "$dir" "$dir/state" task-x1 final)
+  case "$out" in
+    PASS) pass "verify reads the ledger from the receipt's exact commit, unaffected by a later edit on main" ;;
+    *) fail "expected the old receipt to still pass despite a later ledger edit, got: $out" ;;
+  esac
+}
+
 # --- bin/fm-preservation-record.sh: real receipt ingestion ------------------
 
 test_record_accepts_a_pre_worktree_receipt_with_no_app_head() {
@@ -787,6 +860,8 @@ test_verify_secondmate_requires_app_head
 test_verify_secondmate_passes_with_matching_head_and_fresh_backlog
 test_verify_secondmate_refuses_when_backlog_is_newer_than_the_receipt
 test_verify_secondmate_refuses_a_head_mismatch
+test_verify_refuses_old_receipt_when_evidence_exists_only_on_a_later_commit
+test_verify_reads_ledger_from_the_exact_receipt_commit_not_a_later_edit
 test_record_accepts_a_pre_worktree_receipt_with_no_app_head
 test_waiver_records_words_and_lets_verify_stay_refused
 test_teardown_refuses_without_a_final_receipt
