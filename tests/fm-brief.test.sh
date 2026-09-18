@@ -123,6 +123,46 @@ test_ship_project_memory_wording() {
   pass "fm-brief.sh: ship project-memory wording carries the AGENTS.md authoring bar"
 }
 
+test_ship_briefs_enforce_actions_cost_gate() {
+  local home id brief
+  home="$TMP_ROOT/actions-cost-home"
+  mkdir -p "$home/data"
+  id="brief-actions-cost-c2"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "brief was not scaffolded"
+  assert_grep "Treat remote pushes, PR creation or edits" "$brief" \
+    "ship brief lost the GitHub Actions trigger inventory"
+  assert_grep "publish one final head" "$brief" \
+    "ship brief lost the one-final-head rule"
+  assert_grep "monitor read-only and do not edit the PR while checks" "$brief" \
+    "ship brief lost read-only monitoring during CI"
+  assert_grep "Never rerun a successful job" "$brief" \
+    "ship brief lost the no-duplicate-rerun rule"
+  assert_grep "GitHub Actions-triggering mutation required" "$brief" \
+    "ship brief lost the stop-and-escalate cost gate"
+  pass "fm-brief.sh: ship briefs enforce the GitHub Actions cost gate"
+}
+
+test_ship_briefs_preserve_worker_through_captain_acceptance() {
+  local home id brief
+  home="$TMP_ROOT/acceptance-lifecycle-home"
+  mkdir -p "$home/data"
+  id="brief-acceptance-c3"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "brief was not scaffolded"
+  assert_grep "they do not mean the behavior is bug-free or captain-accepted" "$brief" \
+    "ship brief incorrectly equates green checks with acceptance"
+  assert_grep "remain parked and resumable on this exact session, worktree, branch, and head" "$brief" \
+    "ship brief lost same-worker recovery through acceptance"
+  assert_grep "captain reports acceptance testing complete with no blocking defect" "$brief" \
+    "ship brief lost captain acceptance as a teardown gate"
+  assert_grep "CI success alone is never teardown authority" "$brief" \
+    "ship brief permits premature teardown after CI"
+  pass "fm-brief.sh: ship workers remain recoverable through captain acceptance"
+}
+
 test_herdr_lab_contract_is_explicit_and_complete() {
   local home id brief
   home="$TMP_ROOT/herdr-lab-home"
@@ -314,6 +354,8 @@ test_ship_modes_generate_clean_briefs
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_ship_project_memory_wording
+test_ship_briefs_enforce_actions_cost_gate
+test_ship_briefs_preserve_worker_through_captain_acceptance
 test_herdr_lab_contract_is_explicit_and_complete
 test_herdr_lab_contract_quotes_foreign_firstmate_path
 test_herdr_lab_omission_is_loud_for_ship_and_scout
