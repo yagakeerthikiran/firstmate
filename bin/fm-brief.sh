@@ -257,7 +257,6 @@ The report is the only thing that survives, so anything worth keeping must be in
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
    every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
-
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
@@ -365,6 +364,15 @@ $RULE1
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
    every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
+8. Treat remote pushes, PR creation or edits, ready/reopen transitions, reviews, workflow dispatches,
+   and workflow reruns as potentially billable CI triggers. Before the first such mutation, finish the
+   intended commits, exact-head evidence, and PR text locally, inspect the repository workflow triggers,
+   and publish one final head. After publishing, monitor read-only and do not edit the PR while checks
+   are queued or running. Never use PR metadata edits, labels, comments, empty commits, force-pushes,
+   or workflow dispatches for progress reporting. Never rerun a successful job or retry a code/test
+   failure without a correcting commit. A transient infrastructure failure permits at most one narrow
+   failed-job retry after inspecting the existing run; otherwise append \`needs-decision: additional
+   GitHub Actions-triggering mutation required\` and stop.
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
@@ -374,5 +382,12 @@ If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, ad
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
 
 $DOD
+
+# Acceptance and teardown
+Green local tests, green CI, published evidence, and a READY review prove only the checks that ran; they do not mean the behavior is bug-free or captain-accepted.
+After reporting the ready result, stop changing the branch but remain parked and resumable on this exact session, worktree, branch, and head through guardian review, merge, deployment, smoke validation, and captain acceptance testing.
+If any defect is reported during those stages, resume this same task and correct it through the selected delivery path.
+Firstmate may tear this task down only after landing is confirmed and the captain reports acceptance testing complete with no blocking defect, or explicitly waives the acceptance gate for the named exact head/deployment.
+If deployment or captain testing is not applicable, that fact must be recorded explicitly before teardown; CI success alone is never teardown authority.
 EOF
 echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
