@@ -244,6 +244,9 @@ One bound holds: this covers the open work you are actually holding in context, 
 It is not a reconciliation of durable records against repository or forge reality, cannot become one on input this volatile, and must never be reported as one.
 Where the right correction is a judgment you cannot make, leave the record alone and raise the question instead of guessing.
 
+A pause is one of the lifecycle events the AgentLab evidence-preservation contract requires a checkpoint for (docs/evidence-preservation-lifecycle.md in yagakeerthikiran/agentlab-shared-memory), and this session's own knowledge is exactly the kind of thing a reset destroys.
+Before this pass may declare the session reset-safe, run `bin/fm-stow-preservation.sh`, which mechanically publishes a pause checkpoint for every in-flight task and the firstmate home; a non-zero exit means preservation is not current, and the completion receipt below must say so rather than claiming reset-safe.
+
 ## One-time migration of unmarked entries
 
 Legacy entries carry no markers; an unmarked entry is its file's default tier with unknown age, and unknown age is not guilt.
@@ -265,7 +268,8 @@ Report the outcome in plain captain-facing language with all of these facts:
 - each archived entry's reason, each autonomous offload's live destination and actual relief, and, when a pinned candidate was proposed, the `proposed-offload` section with every candidate's fields;
 - every unresolved exception, including a primary-owned shared-file constraint in a secondmate home, and every concrete captain decision opened for an over-budget result;
 - each open record this pass filed or corrected, and each one it deliberately left alone with the judgment it is waiting on;
-- whether the session is safe to reset, only when all durable findings are captured, every open record this session held is filed or explicitly left with its reason, and the post-pass result is within budget with no exception or pending budget decision.
+- `bin/fm-stow-preservation.sh`'s outcome: which checkpoints it published, or its exact refusal;
+- whether the session is safe to reset, only when all durable findings are captured, every open record this session held is filed or explicitly left with its reason, the preservation checkpoint publish above succeeded, and the post-pass result is within budget with no exception or pending budget decision.
 
 State what reset-safe means in the same breath as the claim: nothing this session knew has been lost.
 It is never a claim that the home's durable records are correct, because this pass checks no record the session did not name.

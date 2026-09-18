@@ -9,8 +9,8 @@
 # away-authority, outcome-publication, and recovery behavior directly.
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 fm_git_identity fmtest fmtest@example.invalid
 
 PR_MERGE="$ROOT/bin/fm-pr-merge.sh"
@@ -350,11 +350,52 @@ glab_merge_line() {
   grep -F ' mr merge ' "$1" || true
 }
 
+# satisfy_preservation_for_merge <case_dir> <url>: this suite is not exercising
+# bin/fm-pr-merge.sh's AgentLab evidence-preservation gate (that behavior lives
+# in tests/fm-preservation-lifecycle-integration.test.sh), so every case gets a
+# passing fixture the same way tests/fixtures.sh's fm_test_run_spawn
+# pre-satisfies the sibling gate for unrelated spawn suites. Reuses
+# fm_test_preservation_fixture_build/fm_test_preservation_satisfy (the shared
+# fixture already built for the spawn/promote/teardown suites) and additionally
+# writes a matching manifests/<owner>/<repo>/pr-<n>.json for a GitHub URL,
+# since that gate checks only application_head_sha/preservation_status
+# directly rather than running the full schema validator.
+satisfy_preservation_for_merge() {
+  local case_dir=$1 url=$2 head owner repo prnum
+  [ "${FM_TEST_SKIP_PRESERVATION_SATISFY:-0}" != 1 ] || return 0
+  head=$(cat "$case_dir/github-head" 2>/dev/null || true)
+  [ -n "$head" ] || head=0000000000000000000000000000000000000f
+  # No app_head is passed: these tests' task worktrees are either absent or a
+  # plain non-git directory, so fm_preservation_verify's final-staleness check
+  # (which compares against the task worktree's own head, not the PR's head)
+  # never triggers here regardless of this value.
+  fm_test_preservation_satisfy "$case_dir/state" task-x1 "$case_dir/agentlab-fixture" final
+  case "$url" in
+    https://github.com/*/*/pull/*)
+      owner=$(printf '%s' "$url" | sed -E 's#https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)$#\1#')
+      repo=$(printf '%s' "$url" | sed -E 's#https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)$#\2#')
+      prnum=$(printf '%s' "$url" | sed -E 's#https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+)$#\3#')
+      [ -n "$owner" ] && [ -n "$repo" ] && [ -n "$prnum" ] || return 0
+      mkdir -p "$case_dir/agentlab-fixture/src/manifests/$owner/$repo"
+      node -e '
+        const fs = require("node:fs");
+        const [p, head] = process.argv.slice(1);
+        fs.writeFileSync(p, JSON.stringify({ application_head_sha: head, preservation_status: "complete" }));
+      ' "$case_dir/agentlab-fixture/src/manifests/$owner/$repo/pr-$prnum.json" "$head"
+      git -C "$case_dir/agentlab-fixture/src" add -A
+      git -C "$case_dir/agentlab-fixture/src" -c user.email=t@t -c user.name=t commit -q -m "manifest fixture" --allow-empty
+      git -C "$case_dir/agentlab-fixture/src" push -q origin main
+      ;;
+  esac
+}
+
 run_pr_merge() {
   local case_dir=$1 rc; shift
+  satisfy_preservation_for_merge "$case_dir" "${2:-}"
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_HOME="${FM_TEST_HOME:-$case_dir/home}" \
   FM_STATE_OVERRIDE="$case_dir/state" \
+  FM_PRESERVATION_AGENTLAB_ROOT="$case_dir/agentlab-fixture/src" \
   FM_TEST_GH_AXI_LOG="$case_dir/gh-axi.log" \
   FM_TEST_GH_LOG="$case_dir/gh.log" \
   FM_TEST_GH_OUTCOME="$case_dir/github-outcome" \
@@ -2789,3 +2830,85 @@ test_away_grant_and_yolo_and_hold_for_return
 test_away_grant_does_not_bypass_red_or_identity
 test_unreadable_away_record_refuses_merge
 test_allow_red_refused_on_gitlab
+
+# --- AgentLab evidence-preservation merge gate ------------------------------
+# (bin/fm-pr-merge.sh's require_preservation_ready; canonical contract:
+# docs/evidence-preservation-lifecycle.md in yagakeerthikiran/agentlab-shared-memory)
+
+test_preservation_gate_refuses_without_a_receipt() {
+  local case_dir rc
+  case_dir=$(make_case preservation-no-receipt)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7070707070707070707070707070707070707070
+  : > "$case_dir/gh-axi.log"
+
+  set +e
+  FM_TEST_SKIP_PRESERVATION_SATISFY=1 run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/70 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "preservation-no-receipt: merge must refuse without a preservation receipt"
+  assert_grep 'PR merge refused' "$case_dir/stderr" \
+    "preservation-no-receipt: refusal did not name the preservation gate"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "preservation-no-receipt: gh pr merge ran despite the missing receipt"
+  pass "fm-pr-merge refuses a GitHub merge without a preservation receipt"
+}
+
+test_preservation_gate_refuses_on_manifest_head_mismatch() {
+  local case_dir rc
+  case_dir=$(make_case preservation-head-mismatch)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7171717171717171717171717171717171717170
+  : > "$case_dir/gh-axi.log"
+  satisfy_preservation_for_merge "$case_dir" https://github.com/example/repo/pull/71
+  # Overwrite the manifest this helper just wrote with a stale head.
+  node -e '
+    const fs = require("node:fs");
+    fs.writeFileSync(process.argv[1], JSON.stringify({
+      application_head_sha: "0".repeat(40), preservation_status: "complete",
+    }));
+  ' "$case_dir/agentlab-fixture/src/manifests/example/repo/pr-71.json"
+  git -C "$case_dir/agentlab-fixture/src" add -A
+  git -C "$case_dir/agentlab-fixture/src" -c user.email=t@t -c user.name=t commit -q -m "stale manifest"
+  git -C "$case_dir/agentlab-fixture/src" push -q origin main
+
+  set +e
+  FM_TEST_SKIP_PRESERVATION_SATISFY=1 run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/71 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "preservation-head-mismatch: merge must refuse on a stale manifest head"
+  assert_grep 'pins head' "$case_dir/stderr" \
+    "preservation-head-mismatch: refusal did not name the stale manifest head"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "preservation-head-mismatch: gh pr merge ran despite the stale manifest"
+  pass "fm-pr-merge refuses a GitHub merge when the manifest pins a stale head"
+}
+
+test_preservation_waiver_records_words_and_proceeds() {
+  local case_dir rc
+  case_dir=$(make_case preservation-waiver)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 7272727272727272727272727272727272727272
+  : > "$case_dir/gh-axi.log"
+
+  set +e
+  FM_TEST_SKIP_PRESERVATION_SATISFY=1 run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/72 \
+    --preservation-waived-by-captain "ship it, I have reviewed the evidence myself" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "preservation-waiver: an explicit captain waiver must proceed"
+  assert_grep 'ship it, I have reviewed the evidence myself' "$case_dir/state/task-x1.preservation" \
+    "preservation-waiver: the waiver receipt did not record the captain's words"
+  assert_logged_gh_merge "$case_dir" 72 example/repo --squash
+  pass "fm-pr-merge proceeds on an explicit --preservation-waived-by-captain and records the words"
+}
+
+test_preservation_gate_refuses_without_a_receipt
+test_preservation_gate_refuses_on_manifest_head_mismatch
+test_preservation_waiver_records_words_and_proceeds

@@ -35,6 +35,7 @@ Hold-for-return is the default and the only reach profile this release records: 
    Exit 3 only means a clause was refused; the proposal stands.
 3. **Confirm on the captain's go.**
    Run `bin/fm-afk-launch.sh confirm`; it promotes the proposal into the record and prints the entry announcement.
+   Run `bin/fm-stow-preservation.sh` best-effort before relaying that announcement, since going away is one of the pause events the AgentLab evidence-preservation contract expects a checkpoint for (docs/evidence-preservation-lifecycle.md in yagakeerthikiran/agentlab-shared-memory); unlike `/stow`'s reset gate this never blocks entry, but a non-zero exit is folded into the announcement as an actionable line naming the exact refusal, not silently dropped.
    Relay that announcement verbatim in spirit: hold-for-return only, no phone channel, anything that needs the captain waits for their return, N clauses recorded and M refused, recorded clauses are held for the return brief and are not executed by this release, and forbidden, destructive, irreversible, and security-sensitive actions are never pre-authorizable regardless of clause text because no recorded clause is authority by itself.
    With no words, run `propose` and `confirm` back to back; the announcement is the same.
    Re-invoking `/afk` while already away with no new words is a refresh and leaves the standing record untouched; new words replace the mandate after the same read-back, preserve the original session entry, and archive the superseded mandate for the return brief.

@@ -215,6 +215,12 @@ The bound is required rather than cosmetic because churn and pane staleness read
 The flag is a home-local supervision-noise preference and is not inherited by secondmate homes, which run their own crew mix.
 [`architecture.md`](architecture.md) owns the triage contract and `bin/fm-watch.sh`'s `signal_turnend_panes_churned` owns the exact evidence and fail-closed boundaries.
 
+## Preservation staleness grace (config/preservation-grace-minutes)
+
+The optional local, gitignored `config/preservation-grace-minutes` file holds a plain positive integer of minutes; absent or malformed defaults to `30`.
+`bin/fm-preservation-staleness-lib.sh`'s `fm_preservation_grace_seconds` is the one reader, consumed by `bin/fm-watch.sh`'s heartbeat-cadence `check: preservation-stale <id>` wake and `bin/fm-bootstrap.sh`'s `PRESERVATION:` session-start diagnostic (`bootstrap-diagnostics` skill).
+Both are a network-free advisory heads-up, never the authoritative gate: `docs/evidence-preservation-lifecycle.md` in `yagakeerthikiran/agentlab-shared-memory` is the canonical AgentLab evidence-preservation contract, and `bin/fm-preservation-lib.sh`'s `fm_preservation_verify` is what a spawn, promotion, teardown, or merge actually enforces.
+
 ## Gate defaults (.no-mistakes.yaml)
 
 The tracked `.no-mistakes.yaml` sets `test.evidence.store_in_repo: true` and pins `commands.lint` to `bin/fm-lint.sh`, the same owner CI invokes.
