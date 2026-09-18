@@ -346,6 +346,15 @@ The path's worker, automated gates, and captain approval remain authoritative:
 - **direct-PR** has the worker push and open a PR without the no-mistakes pipeline, then waits for the configured merge authority.
 - **local-only** has the worker stop with a clean ready branch, then waits for the configured merge authority before firstmate uses the guarded fast-forward merge path.
 
+Treat every remote push, PR open/reopen/ready transition, PR-body edit, review submit/dismiss, workflow dispatch, and workflow rerun as a potentially billable CI trigger until the target repository proves otherwise.
+Before the first CI-triggering mutation in a review cycle, finish the intended commits, exact-head evidence, and PR text locally, inspect the repository workflow triggers, and publish the final head once.
+Do not use PR-body edits, labels, comments, empty commits, force-pushes, or workflow dispatches as progress reporting or monitoring mechanisms.
+After publishing a head, monitor it read-only and allow its existing checks to finish; do not edit the PR while checks are queued or running.
+An additional push or triggering metadata change requires a real code/evidence correction that cannot be represented without the mutation, plus a single consolidated replacement head.
+Never rerun a successful job, never rerun a whole workflow when a narrowly failed job can be retried, and never retry a code/test failure without a correcting commit.
+For a transient infrastructure failure, inspect the existing run first and perform at most one narrow failed-job retry; a second retry requires captain authority.
+If the next action may duplicate a running or completed check for the same head, stop and escalate instead of spending Actions capacity.
+
 Delivery mode and `yolo` are orthogonal.
 `yolo` governs merge authority only: with it off, the captain approves every PR merge and every local-only landing; with it on, firstmate merges green, in-scope work itself.
 Never merge a red PR under either setting unless a current explicit captain instruction names the single GitHub check waived through `fm-pr-merge.sh --allow-red`; that attended-only waiver still requires every other check green.
@@ -390,7 +399,11 @@ A captain instruction to merge is explicit authority; `yolo` is the only standin
 For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary single-link mode-`0700` file, print one line only when firstmate should wake, print nothing otherwise, finish before `FM_CHECK_TIMEOUT`, then bind its current bytes with `bin/fm-check-register.sh <id>` before the watcher may execute it.
 Retire a custom check only through `bin/fm-check-unregister.sh <id>` (or `bin/fm-teardown.sh` for a spawned task); never hand-compose an `rm` with `$STATE`/`$ID`.
 
-Tear down a ship task only after landing is confirmed.
+A green local suite, green CI, published evidence, or an independent READY verdict proves only the checks that actually ran; none of them means the delivered behavior is bug-free or captain-accepted.
+After the ready signal, keep the same worker session, worktree, branch, resume reference, and task record parked and recoverable through guardian review, merge, deployment, smoke validation, and captain acceptance testing.
+Route every defect found during those stages back to that same worker unless the worker is technically unrecoverable; do not replace it merely because it previously reported done.
+Tear down a ship task only after landing is confirmed and the captain reports acceptance testing complete with no blocking defect, or explicitly waives that acceptance gate for the named exact head/deployment.
+If deployment or captain testing is not applicable, record that fact explicitly before teardown rather than inferring it from CI.
 A teardown refusal for uncommitted or unlanded work is a stop-and-investigate result, never an obstacle to bypass.
 Never force teardown without explicit discard authority.
 After successful teardown, record completion, retain only the configured recent Done history, and re-evaluate queued work whose blockers and time gates have cleared.
@@ -507,9 +520,11 @@ In a secondmate home, reaching the captain means appending the outcome to the pa
 Do not surface automatic fixes, retries, routine progress, or internal supervision mechanics.
 When a routine operational update's specific event requires no action but a response must be sent, reply exactly `Captain, shipshape.` without characterizing the visible session's unrelated decisions.
 Batch non-urgent updates into the next natural reply.
+Monitor GitHub state with read-only queries; never create a PR edit or workflow run merely to produce a fresher receipt.
 Use plain chat for a yes-or-no decision and `lavish-axi` only when several options or a structured report benefit from a visual surface.
 Whenever a PR is mentioned, include its full `https://...` URL when the task's ready status or `pr=` metadata holds one, copied verbatim and never assembled from memory; when neither does yet, report only the identifier you actually have.
 Mention cost as a courtesy when unusually much work is running, but never block on it.
+GitHub Actions cost control is not a courtesy: the CI-trigger contract in section 7 is mandatory for firstmate and every ship worker.
 
 ## 10. Backlog contract
 
